@@ -1,151 +1,220 @@
 
-// ==== Single ==== // 
-double Gaus(double *dim, double *par){
-  // 3 parameters: a, x0, sigma;
-  double a = par[0];
-  double x0 = par[1];
-  double sigma = par[2];
-  double x = dim[0];
-
-  return a*TMath::Exp(-((x-x0)*(x-x0))/(2*sigma*sigma));
+// ==== Polynomial ===== //
+double Poly(double *dim, double *par, int order){
+  double result = 0.0;
+  for(int i=0;i<=order;i++){
+    result += *(par+i) *TMath::Power(dim[0],i); 
+  }
+  return result;
 }
 
-double GausBG(double *dim, double *par){
-  // 3 parameters: a, x0, sigma;
-  double a = par[0];
-  double x0 = par[1];
-  double sigma = par[2];
+// ==== StepFunction ==== //
+double StepFunction(double *dim, double *par){
   double x = dim[0];
 
-  return a*TMath::Exp(-((x-x0)*(x-x0))/(2*sigma*sigma)) + (par[3]*x + par[4]);
+  double height = par[0];
+  double cent   = par[1];
+  double sigma  = par[2];
+  double step   = par[3];
+
+  return height*(step/100.0) *TMath::Erfc((x-cent)/(TMath::Sqrt(2.0)*sigma));
 }
 
-// ==== Double ==== // 
-double DoubleGaus(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double sigma = par[4];
-  double x = dim[0];
+// ==== Step BG ==== //
+double StepBG(double *dim, double *par){
+  return StepFunction(dim,par) + Poly(dim, (par+4), 0);
+}
 
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2);
+
+// ==== multiple Gaus ==== //
+// gaus_order = 1 ==> single Gaus;
+// gaus_order = 2 ==> double Gaus;
+double MultGaus(double *dim, double *par, int gaus_order){
+   
+  double result = 0.0;
+  double x      = dim[0];
+  double sigma  = par[0];
+  for(int i=0;i<gaus_order;i++){
+    double height = par[1+2*i];
+    double cent   = par[2+2*i];
+    result += height *TMath::Gaus(x,cent,sigma);
+  }  
+  
+  return result;
+}
+
+
+// ==== single Gaus ==== //
+double Gaus(double *dim, double *par) {
+  // - dim[0]: channels to fit
+  // - par[0]: height of peak
+  // - par[1]: cent of peak
+  // - par[2]: sigma
+  // - par[3]: relative height of skewed gaus to gaus
+
+  double x      = dim[0];
+  double height = par[0];
+  double cent   = par[1];
+  double sigma  = par[2];
+  double R      = par[3];
+
+  return height*(1.0-R/100.0)*TMath::Gaus(x,cent,sigma);
+}
+
+
+
+// ==== SkewedGaus ==== //
+double SkewedGaus(double *dim, double*par){
+  // StepFunction(dim,par) + PolyBg
+  // - par[0]: height of peak
+  // - par[1]: cent of peak
+  // - par[2]: sigma
+  // - par[3]: relative height of skewed gaus to gaus
+  // - par[4]: "skewedness" of the skewed gaussin
+
+  Double_t x      = dim[0]; //channel number used for fitting
+  Double_t height = par[0]; //height of photopeak
+  Double_t cent   = par[1]; //Peak Centroid of non skew gaus
+  Double_t sigma  = par[2]; //standard deviation of gaussian
+  Double_t R      = par[3]; //relative height of skewed gaussian
+  Double_t beta   = par[4]; //"skewedness" of the skewed gaussian
+
+  double scaling = R*height/100.0;
+
+  double fterm = (x-cent)/(sigma*TMath::Sqrt(2.));
+  double sterm = sigma /  (beta *TMath::Sqrt(2.));
+
+  return scaling * TMath::Exp((x-cent)/beta) * TMath::Erfc(fterm + sterm); 
+}
+
+
+// ==== PhotoPeak ==== //
+double PhotoPeak(double *dim, double *par){
+  return Gaus(dim,par) + SkewedGaus(dim,par);
+}
+
+
+// ==== PhotoPeak + StepBG ==== //
+double PhotoPeakBG(double *dim, double *par){
+  // - dim[0]: channels to fit
+  // - par[0]: height of peak
+  // - par[1]: cent of peak
+  // - par[2]: sigma
+  // - par[3]: relative height of skewed gaus to gaus
+  // - par[4]: "skewedness" of the skewed gaussin
+  // - par[5]: size of stepfunction step.
+
+  // - par[6]: base bg height.
+  // - par[7]: slope of bg.
+  
+  double spar[4];
+  spar[0] = par[0];
+  spar[1] = par[1];
+  spar[2] = par[2];
+  spar[3] = par[5];  //stepsize;
+  return Gaus(dim,par) + SkewedGaus(dim,par) + StepFunction(dim,spar) + Poly(dim,par+6,0);
+}
+
+
+// ==== PhotoPeak + StepBG if out of range ==== //
+double PhotoPeakBGExcludeRegion(double *dim, double *par){
+  // - dim[0]: channels to fit
+  // - par[0]: height of peak
+  // - par[1]: cent of peak
+  // - par[2]: sigma
+  // - par[3]: relative height of skewed gaus to gaus
+  // - par[4]: "skewedness" of the skewed gaussin
+  // - par[5]: size of stepfunction step.
+  
+  // - par[6]: base bg height.
+  
+  // - par[7]: exclude low;
+  // - par[8]: exclude high;
+
+  if(dim[0]>par[7] && dim[0]<par[8]) {
+    TF1::RejectPoint();
+    return 0;
+  }
+  double spar[4];
+  spar[0] = par[0];
+  spar[1] = par[1];
+  spar[2] = par[2];
+  spar[3] = par[5];  //stepsize;
+  return Gaus(dim,par) + SkewedGaus(dim,par) + StepFunction(dim,spar) + Poly(dim,par+6,0);
+}
+
+
+//==============================================================================================//
+//All Bg is initialized as Poly2;
+//Fix the last parameter = 0 ==> obtain linear bg 
+double SingleGausBG(double *dim, double *par){
+  double result = MultGaus(dim, par, 1);
+  double bg     = Poly(dim, par+3, 2);
+  
+  return result + bg;  
 }
 
 double DoubleGausBG(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double sigma = par[4];
-  double x = dim[0];
-
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2) + (par[5]*x + par[6]);
-}
-
-// ==== Triple ==== // 
-double TripleGaus(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double a3 = par[4];
-  double x3 = par[5];
-  double sigma = par[6];
-  double x = dim[0];
-
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  double arr3[3] = {a3,x3,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2) + Gaus(dim,arr3);
+  double result = MultGaus(dim, par, 2);
+  double bg     = Poly(dim, par+5, 2);
+  
+  return result + bg;  
 }
 
 double TripleGausBG(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double a3 = par[4];
-  double x3 = par[5];
-  double sigma = par[6];
-  double x = dim[0];
-
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  double arr3[3] = {a3,x3,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2) + Gaus(dim,arr3) + (par[7]*x + par[8]);
-}
-
-
-// ==== Quad ==== // 
-double QuadGaus(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double a3 = par[4];
-  double x3 = par[5];
-  double a4 = par[6];
-  double x4 = par[7];
-  double sigma = par[8];
-  double x = dim[0];
-
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  double arr3[3] = {a3,x3,sigma};
-  double arr4[3] = {a4,x4,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2) + Gaus(dim,arr3) + Gaus(dim,arr4);
+  double result = MultGaus(dim, par, 3);
+  double bg     = Poly(dim, par+7, 2);
+  
+  return result + bg;  
 }
 
 double QuadGausBG(double *dim, double *par){
-  double a1 = par[0];
-  double x1 = par[1];
-  double a2 = par[2];
-  double x2 = par[3];
-  double a3 = par[4];
-  double x3 = par[5];
-  double a4 = par[6];
-  double x4 = par[7];
-  double sigma = par[8];
-  double x = dim[0];
-
-  double arr1[3] = {a1,x1,sigma};
-  double arr2[3] = {a2,x2,sigma};
-  double arr3[3] = {a3,x3,sigma};
-  double arr4[3] = {a4,x4,sigma};
-  return Gaus(dim,arr1) + Gaus(dim,arr2) + Gaus(dim,arr3) + Gaus(dim,arr4) + (par[9]*x + par[10]);
+  double result = MultGaus(dim, par, 4);
+  double bg     = Poly(dim, par+9, 2);
+  
+  return result + bg;  
 }
 
+//==============================================================================================//
+
+
+
+
 // ==== Fitting Functions ==== //
-void GausFit(TH1 *hist, double lower, double upper){
+void SingleGausFit(TH1 *hist, double lower, double upper, double bgquad=0.0){
   hist->GetListOfFunctions()->Clear();
 
-  TF1 *fx = new TF1("fx", GausBG, lower, upper, 5);
-  TF1 *fbg= new TF1("fbg","[0]*x+[1]",lower, upper);
+  TF1 *fx = new TF1("fx", SingleGausBG, lower, upper, 6);
+  TF1 *fbg= new TF1("fbg","pol2",lower, upper);
 
-  fx->SetParName(0, "Height");
-  fx->SetParName(1, "Centroid");
-  fx->SetParName(2, "Sigma");
-  fx->SetParName(3, "Bg slope");
-  fx->SetParName(4, "Bg offset");
+  fx->SetParName(0, "Sigma");
+  fx->SetParName(1, "Height");
+  fx->SetParName(2, "Centroid");
+  fx->SetParName(3, "BG offset");
+  fx->SetParName(4, "BG slope");
+  fx->SetParName(5, "BG Quad");
 
-  fx->SetParameter(0, hist->GetMaximum());
-  fx->SetParameter(1, (lower+upper)/2.);
-  fx->SetParameter(2, 5);
-  fx->SetParameter(3, -0.1);
-  fx->SetParameter(4, hist->GetMinimum());
+  fx->SetParameter(0, 2);
+  fx->SetParameter(1, hist->GetBinContent(hist->FindBin((lower+upper)/2)));
+  fx->SetParameter(2, (lower+upper)/2.);
+  fx->SetParameter(3, hist->GetBinContent(hist->FindBin(lower)));
+  fx->SetParameter(4, -0.1);
+  fx->SetParameter(5,bgquad);
 
-  fx->SetParLimits(0,0,1e6);
-  fx->SetParLimits(3,-100,1.);
-  fx->SetParLimits(4,-1e6,1e6);
+  fx->SetParLimits(0, 0, 5);
+  fx->SetParLimits(1, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(3, -fabs(hist->GetMaximum()*10), fabs(hist->GetMaximum()*10));
+  fx->SetParLimits(4,-100,100);
+  fx->SetParLimits(5,-100,0);
 
+  int npar = fx->GetNpar();
+  if(bgquad == 0.0){
+    fx->FixParameter((npar-1),0);
+  }
   hist->Fit(fx,"","",lower,upper);
-  fbg->SetParameter(0, fx->GetParameter(3));
-  fbg->SetParameter(1, fx->GetParameter(4));
+  
+  double bgpar[3] = {fx->GetParameter(npar-3), fx->GetParameter(npar-2), fx->GetParameter(npar-1)};
+  fbg->SetParameters(bgpar);
   fbg->SetLineColor(kBlack);
   fbg->SetLineStyle(9);
 
@@ -164,256 +233,313 @@ void GausFit(TH1 *hist, double lower, double upper){
   gPad->Update();
 }
 
-void DoubleGausFit(TH1 *hist, double cent1, double cent2,double lower, double upper){
+void DoubleGausFit(TH1 *hist, double cent1, double cent2, double lower, double upper, double bgquad=0.0){
   hist->GetListOfFunctions()->Clear();
 
-  TF1 *fx = new TF1("fx", DoubleGausBG, lower, upper, 7);
-  TF1 *f1 = new TF1("f1", GausBG, lower, upper, 5);
-  TF1 *f2 = new TF1("f2", GausBG, lower, upper, 5);
-  TF1 *fbg= new TF1("fbg","[0]*x+[1]",lower, upper);
+  TF1 *fx = new TF1("fx", DoubleGausBG, lower, upper, 8);
+  TF1 *f1 = new TF1("f1", SingleGausBG, lower, upper, 6);
+  TF1 *f2 = new TF1("f2", SingleGausBG, lower, upper, 6);
+  TF1 *fbg= new TF1("fbg","pol2",lower, upper);
 
-  fx->SetParName(0, "Height 1");
-  fx->SetParName(1, "Centroid 1");
-  fx->SetParName(2, "Height 2");
-  fx->SetParName(3, "Centroid 2");
-  fx->SetParName(4, "Sigma");
-  fx->SetParName(5, "Bg slope");
-  fx->SetParName(6, "Bg offset");
+  fx->SetParName(0, "Sigma");
+  fx->SetParName(1, "Height1");
+  fx->SetParName(2, "Centroid1");
+  fx->SetParName(3, "Height2");
+  fx->SetParName(4, "Centroid2");
+  fx->SetParName(5, "BG offset");
+  fx->SetParName(6, "BG slope");
+  fx->SetParName(7, "BG Quad");
 
-  fx->SetParameter(0, hist->GetMaximum());
-  fx->SetParameter(1, cent1);
-  fx->SetParameter(2, hist->GetMaximum());
-  fx->SetParameter(3, cent2);
-  fx->SetParameter(4, 1);
-  fx->SetParameter(5, -0.1);
-  fx->SetParameter(6, hist->GetMinimum());
+  fx->SetParameter(0, 2);
+  fx->SetParameter(1, hist->GetBinContent(hist->FindBin(cent1)));
+  fx->SetParameter(2, cent1);
+  fx->SetParameter(3, hist->GetBinContent(hist->FindBin(cent2)));
+  fx->SetParameter(4, cent2);
+  fx->SetParameter(5, hist->GetBinContent(hist->FindBin(lower)));
+  fx->SetParameter(6, -0.1);
+  fx->SetParameter(7,bgquad);
 
-  fx->SetParLimits(0,0,.1e6);
-  fx->SetParLimits(2,0,.1e6);
-  fx->SetParLimits(5,-100,.1);
-  fx->SetParLimits(6,-1e6,1e6);
-	
-	hist->Fit(fx,"","",lower,upper);
-  f1->SetParameter(0, fx->GetParameter(0));
-  f1->SetParameter(1, fx->GetParameter(1));
-  f1->SetParameter(2, fx->GetParameter(4));
-  f1->SetParameter(3, fx->GetParameter(5));
-  f1->SetParameter(4, fx->GetParameter(6));
-  f1->SetLineColor(kBlue);
-  f2->SetParameter(0, fx->GetParameter(2));
-  f2->SetParameter(1, fx->GetParameter(3));
-  f2->SetParameter(2, fx->GetParameter(4));
-  f2->SetParameter(3, fx->GetParameter(5));
-  f2->SetParameter(4, fx->GetParameter(6));
-  f2->SetLineColor(kGreen);
-  fbg->SetParameter(0, fx->GetParameter(5));
-  fbg->SetParameter(1, fx->GetParameter(6));
+  fx->SetParLimits(0, 0, 5);
+  fx->SetParLimits(1, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(2, lower, upper);
+  fx->SetParLimits(3, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(4, lower, upper);
+  fx->SetParLimits(5, -fabs(hist->GetMaximum()*10), fabs(hist->GetMaximum()*10));
+  fx->SetParLimits(6,-100,100);
+  fx->SetParLimits(7,-100,0);
+
+  int npar = fx->GetNpar();
+  if(bgquad == 0.0){
+    fx->FixParameter((npar-1),0);
+  }
+  hist->Fit(fx,"","",lower,upper);
+  
+  double bgpar[3] = {fx->GetParameter(npar-3), fx->GetParameter(npar-2), fx->GetParameter(npar-1)};
+  fbg->SetParameters(bgpar);
   fbg->SetLineColor(kBlack);
   fbg->SetLineStyle(9);
-
-  double rebin = hist->GetBinWidth(hist->FindBin(lower));
-  double bg = fbg->Integral(lower,upper)/rebin;
-  double sum  = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
-  double area  = fx->Integral(lower,upper)/rebin - bg;
-  double area1 = f1->Integral(lower,upper)/rebin - bg;
-  double area2 = f2->Integral(lower,upper)/rebin - bg;
-  double chi2 = fx->GetChisquare()/(fx->GetNDF()-1);
+  f1->SetParameter(0, fx->GetParameter(0));
+  f1->SetParameter(1, fx->GetParameter(1));
+  f1->SetParameter(2, fx->GetParameter(2));
+  f1->SetParameter(3, bgpar[0]);
+  f1->SetParameter(4, bgpar[1]);
+  f1->SetParameter(5, bgpar[2]);
+  f1->SetLineColor(kBlue);
+  f2->SetParameter(0, fx->GetParameter(0));
+  f2->SetParameter(1, fx->GetParameter(3));
+  f2->SetParameter(2, fx->GetParameter(4));
+  f2->SetParameter(3, bgpar[0]);
+  f2->SetParameter(4, bgpar[1]);
+  f2->SetParameter(5, bgpar[2]);
+  f2->SetLineColor(kGreen);
 
   hist->GetListOfFunctions()->Add(f1);
   hist->GetListOfFunctions()->Add(f2);
   hist->GetListOfFunctions()->Add(fbg);
+
+  double rebin = hist->GetBinWidth(hist->FindBin(lower));
+  double bg    = fbg->Integral(lower,upper)/rebin;
+  double sum   = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
+  double area  = fx->Integral(lower,upper)/rebin - bg;
+  double area1 = f1->Integral(lower,upper)/rebin - bg;
+  double area2 = f2->Integral(lower,upper)/rebin - bg;
+  double chi2  = fx->GetChisquare()/(fx->GetNDF()-1);
+	hist->GetListOfFunctions()->Add(fbg);
   system("Color 02");
-  std::cout<< "Name: " << "gausbg" << std::endl;
-  std::cout<< "Area: " << area  << std::endl;
-  std::cout<< "Area1: " << area1  << std::endl;
-  std::cout<< "Area2: " << area2  << std::endl;
-  std::cout<< "Sum:  " << sum  << std::endl;
-  std::cout<< "Chi2: " << chi2 << std::endl;
+  std::cout<< "Name: "  << "gausbg" << std::endl;
+  std::cout<< "Area: "  << area  << std::endl;
+  std::cout<< "Area1: " << area1 << std::endl;
+  std::cout<< "Area2: " << area2 << std::endl;
+  std::cout<< "Sum:  "  << sum  << std::endl;
+  std::cout<< "Chi2: "  << chi2 << std::endl;
   gPad->Modified();
   gPad->Update();
 }
 
-void TripleGausFit(TH1 *hist, double cent1, double cent2, double cent3, double lower, double upper){
+
+void TripleGausFit(TH1 *hist, double cent1, double cent2, double cent3,
+                              double lower, double upper, double bgquad=0.0){
   hist->GetListOfFunctions()->Clear();
 
-  TF1 *fx = new TF1("fx", TripleGausBG, lower, upper, 9);
-  TF1 *f1 = new TF1("f1", GausBG, lower, upper, 5);
-  TF1 *f2 = new TF1("f2", GausBG, lower, upper, 5);
-  TF1 *f3 = new TF1("f3", GausBG, lower, upper, 5);
-  TF1 *fbg= new TF1("fbg","[0]*x+[1]",lower, upper);
+  TF1 *fx = new TF1("fx", TripleGausBG, lower, upper, 10);
+  TF1 *f1 = new TF1("f1", SingleGausBG, lower, upper, 6);
+  TF1 *f2 = new TF1("f2", SingleGausBG, lower, upper, 6);
+  TF1 *f3 = new TF1("f3", SingleGausBG, lower, upper, 6);
+  TF1 *fbg= new TF1("fbg","pol2",lower, upper);
 
-  fx->SetParName(0, "Height 1");
-  fx->SetParName(1, "Centroid 1");
-  fx->SetParName(2, "Height 2");
-  fx->SetParName(3, "Centroid 2");
-  fx->SetParName(4, "Height 3");
-  fx->SetParName(5, "Centroid 3");
-  fx->SetParName(6, "Sigma");
-  fx->SetParName(7, "Bg slope");
-  fx->SetParName(8, "Bg offset");
+  fx->SetParName(0, "Sigma");
+  fx->SetParName(1, "Height1");
+  fx->SetParName(2, "Centroid1");
+  fx->SetParName(3, "Height2");
+  fx->SetParName(4, "Centroid2");
+  fx->SetParName(5, "Height3");
+  fx->SetParName(6, "Centroid3");
+  fx->SetParName(7, "BG offset");
+  fx->SetParName(8, "BG slope");
+  fx->SetParName(9, "BG Quad");
 
-  fx->SetParameter(0, hist->GetMaximum());
-  fx->SetParameter(1, cent1);
-  fx->SetParameter(2, hist->GetMaximum());
-  fx->SetParameter(3, cent2);
-  fx->SetParameter(4, hist->GetMaximum());
-  fx->SetParameter(5, cent3);
-  fx->SetParameter(6, 1);
-  fx->SetParameter(7, -0.1);
-  fx->SetParameter(8, hist->GetMinimum());
+  fx->SetParameter(0, 2);
+  fx->SetParameter(1, hist->GetBinContent(hist->FindBin(cent1)));
+  fx->SetParameter(2, cent1);
+  fx->SetParameter(3, hist->GetBinContent(hist->FindBin(cent2)));
+  fx->SetParameter(4, cent2);
+  fx->SetParameter(5, hist->GetBinContent(hist->FindBin(cent3)));
+  fx->SetParameter(6, cent3);
+  fx->SetParameter(7, hist->GetBinContent(hist->FindBin(lower)));
+  fx->SetParameter(8, -0.1);
+  fx->SetParameter(9,bgquad);
 
-  fx->SetParLimits(0,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(2,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(4,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(7,-100,.1);
-  fx->SetParLimits(8,-1e6,1e6);
-	
-	hist->Fit(fx,"","",lower,upper);
-  f1->SetParameter(0, fx->GetParameter(0));
-  f1->SetParameter(1, fx->GetParameter(1));
-  f1->SetParameter(2, fx->GetParameter(6));
-  f1->SetParameter(3, fx->GetParameter(7));
-  f1->SetParameter(4, fx->GetParameter(8));
-  f1->SetLineColor(kBlue);
-  f2->SetParameter(0, fx->GetParameter(2));
-  f2->SetParameter(1, fx->GetParameter(3));
-  f2->SetParameter(2, fx->GetParameter(6));
-  f2->SetParameter(3, fx->GetParameter(7));
-  f2->SetParameter(4, fx->GetParameter(8));
-  f2->SetLineColor(kGreen);
-  f3->SetParameter(0, fx->GetParameter(4));
-  f3->SetParameter(1, fx->GetParameter(5));
-  f3->SetParameter(2, fx->GetParameter(6));
-  f3->SetParameter(3, fx->GetParameter(7));
-  f3->SetParameter(4, fx->GetParameter(8));
-  f3->SetLineColor(kMagenta);
-  fbg->SetParameter(0, fx->GetParameter(7));
-  fbg->SetParameter(1, fx->GetParameter(8));
+  fx->SetParLimits(0, 0, 5);
+  fx->SetParLimits(1, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(3, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(5, 0, (hist->GetMaximum()*10));
+  fx->SetParLimits(7, -fabs(hist->GetMaximum()*10), fabs(hist->GetMaximum()*10));
+  fx->SetParLimits(8,-100,100);
+  fx->SetParLimits(9,-100,0);
+
+  int npar = fx->GetNpar();
+  if(bgquad == 0.0){
+    fx->FixParameter((npar-1),0);
+  }
+  hist->Fit(fx,"","",lower,upper);
+  
+  double bgpar[3] = {fx->GetParameter(npar-3), fx->GetParameter(npar-2), fx->GetParameter(npar-1)};
+  fbg->SetParameters(bgpar);
   fbg->SetLineColor(kBlack);
   fbg->SetLineStyle(9);
-
-  double rebin = hist->GetBinWidth(hist->FindBin(lower));
-  double bg = fbg->Integral(lower,upper)/rebin;
-  double sum  = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
-  double area  = fx->Integral(lower,upper)/rebin - bg;
-  double area1 = f1->Integral(lower,upper)/rebin - bg;
-  double area2 = f2->Integral(lower,upper)/rebin - bg;
-  double area3 = f3->Integral(lower,upper)/rebin - bg;
-  double chi2 = fx->GetChisquare()/(fx->GetNDF()-1);
+  f1->SetParameter(0, fx->GetParameter(0));
+  f1->SetParameter(1, fx->GetParameter(1));
+  f1->SetParameter(2, fx->GetParameter(2));
+  f1->SetParameter(3, bgpar[0]);
+  f1->SetParameter(4, bgpar[1]);
+  f1->SetParameter(5, bgpar[2]);
+  f1->SetLineColor(kBlue);
+  f2->SetParameter(0, fx->GetParameter(0));
+  f2->SetParameter(1, fx->GetParameter(3));
+  f2->SetParameter(2, fx->GetParameter(4));
+  f2->SetParameter(3, bgpar[0]);
+  f2->SetParameter(4, bgpar[1]);
+  f2->SetParameter(5, bgpar[2]);
+  f2->SetLineColor(kGreen);
+  f3->SetParameter(0, fx->GetParameter(0));
+  f3->SetParameter(1, fx->GetParameter(5));
+  f3->SetParameter(2, fx->GetParameter(6));
+  f3->SetParameter(3, bgpar[0]);
+  f3->SetParameter(4, bgpar[1]);
+  f3->SetParameter(5, bgpar[2]);
+  f3->SetLineColor(kMagenta);
 
   hist->GetListOfFunctions()->Add(f1);
   hist->GetListOfFunctions()->Add(f2);
   hist->GetListOfFunctions()->Add(f3);
   hist->GetListOfFunctions()->Add(fbg);
+
+  double rebin = hist->GetBinWidth(hist->FindBin(lower));
+  double bg    = fbg->Integral(lower,upper)/rebin;
+  double sum   = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
+  double area  = fx->Integral(lower,upper)/rebin - bg;
+  double area1 = f1->Integral(lower,upper)/rebin - bg;
+  double area2 = f2->Integral(lower,upper)/rebin - bg;
+  double area3 = f3->Integral(lower,upper)/rebin - bg;
+  double chi2  = fx->GetChisquare()/(fx->GetNDF()-1);
+	hist->GetListOfFunctions()->Add(fbg);
   system("Color 02");
-  std::cout<< "Name: " << "gausbg" << std::endl;
-  std::cout<< "Area: " << area  << std::endl;
-  std::cout<< "Area1: " << area1  << std::endl;
-  std::cout<< "Area2: " << area2  << std::endl;
-  std::cout<< "Area3: " << area3  << std::endl;
-  std::cout<< "Sum:  " << sum  << std::endl;
-  std::cout<< "Chi2: " << chi2 << std::endl;
+  std::cout<< "Name: "  << "gausbg" << std::endl;
+  std::cout<< "Area: "  << area  << std::endl;
+  std::cout<< "Area1: " << area1 << std::endl;
+  std::cout<< "Area2: " << area2 << std::endl;
+  std::cout<< "Area3: " << area3 << std::endl;
+  std::cout<< "Sum:  "  << sum  << std::endl;
+  std::cout<< "Chi2: "  << chi2 << std::endl;
   gPad->Modified();
   gPad->Update();
 }
 
 
-void QuadGausFit(TH1 *hist, double cent1, double cent2, double cent3, double cent4, double lower, double upper){
+void QuadGausFit(TH1 *hist, double cent1, double cent2, double cent3, double cent4,
+                            double lower, double upper, double bgquad=0.0){
   hist->GetListOfFunctions()->Clear();
 
-  TF1 *fx = new TF1("fx", QuadGausBG, lower, upper, 11);
-  TF1 *f1 = new TF1("f1", GausBG, lower, upper, 5);
-  TF1 *f2 = new TF1("f2", GausBG, lower, upper, 5);
-  TF1 *f3 = new TF1("f3", GausBG, lower, upper, 5);
-  TF1 *f4 = new TF1("f4", GausBG, lower, upper, 5);
-  TF1 *fbg= new TF1("fbg","[0]*x+[1]",lower, upper);
+  TF1 *fx = new TF1("fx", QuadGausBG, lower, upper, 12);
+  TF1 *f1 = new TF1("f1", SingleGausBG, lower, upper, 6);
+  TF1 *f2 = new TF1("f2", SingleGausBG, lower, upper, 6);
+  TF1 *f3 = new TF1("f3", SingleGausBG, lower, upper, 6);
+  TF1 *f4 = new TF1("f4", SingleGausBG, lower, upper, 6);
+  TF1 *fbg= new TF1("fbg","pol2",lower, upper);
 
-  fx->SetParName(0, "Height 1");
-  fx->SetParName(1, "Centroid 1");
-  fx->SetParName(2, "Height 2");
-  fx->SetParName(3, "Centroid 2");
-  fx->SetParName(4, "Height 3");
-  fx->SetParName(5, "Centroid 3");
-  fx->SetParName(6, "Height 4");
-  fx->SetParName(7, "Centroid 4");
-  fx->SetParName(8, "Sigma");
-  fx->SetParName(9, "Bg slope");
-  fx->SetParName(10,"Bg offset");
+  fx->SetParName(0, "Sigma");
+  fx->SetParName(1, "Height1");
+  fx->SetParName(2, "Centroid1");
+  fx->SetParName(3, "Height2");
+  fx->SetParName(4, "Centroid2");
+  fx->SetParName(5, "Height3");
+  fx->SetParName(6, "Centroid3");
+  fx->SetParName(7, "Height4");
+  fx->SetParName(8, "Centroid4");
+  fx->SetParName(9, "BG offset");
+  fx->SetParName(10,"BG slope");
+  fx->SetParName(11,"BG Quad");
 
-  fx->SetParameter(0, hist->GetMaximum());
-  fx->SetParameter(1, cent1);
-  fx->SetParameter(2, hist->GetMaximum());
-  fx->SetParameter(3, cent2);
-  fx->SetParameter(4, hist->GetMaximum());
-  fx->SetParameter(5, cent3);
-  fx->SetParameter(6, hist->GetMaximum());
-  fx->SetParameter(7, cent4);
-  fx->SetParameter(8, 1);
-  fx->SetParameter(9, -0.1);
-  fx->SetParameter(10,hist->GetMinimum());
+  fx->SetParameter(0, 5);
+  fx->SetParameter(1, hist->GetBinContent(hist->FindBin(cent1)));
+  fx->SetParameter(2, cent1);
+  fx->SetParameter(3, hist->GetBinContent(hist->FindBin(cent2)));
+  fx->SetParameter(4, cent2);
+  fx->SetParameter(5, hist->GetBinContent(hist->FindBin(cent3)));
+  fx->SetParameter(6, cent3);
+  fx->SetParameter(7, hist->GetBinContent(hist->FindBin(cent4)));
+  fx->SetParameter(8, cent4);
+  fx->SetParameter(9, hist->GetBinContent(hist->FindBin(lower)));
+  fx->SetParameter(10, -0.1);
+  fx->SetParameter(11,bgquad);
 
-  fx->SetParLimits(0,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(2,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(4,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(6,0,(hist->GetMaximum())*1.5);
-  fx->SetParLimits(9,-100,.1);
-  fx->SetParLimits(10,-1e6,1e6);
-	
-	hist->Fit(fx,"","",lower,upper);
-  f1->SetParameter(0, fx->GetParameter(0));
-  f1->SetParameter(1, fx->GetParameter(1));
-  f1->SetParameter(2, fx->GetParameter(8));
-  f1->SetParameter(3, fx->GetParameter(9));
-  f1->SetParameter(4, fx->GetParameter(10));
-  f1->SetLineColor(kBlue);
-  f2->SetParameter(0, fx->GetParameter(2));
-  f2->SetParameter(1, fx->GetParameter(3));
-  f2->SetParameter(2, fx->GetParameter(8));
-  f2->SetParameter(3, fx->GetParameter(9));
-  f2->SetParameter(4, fx->GetParameter(10));
-  f2->SetLineColor(kGreen);
-  f3->SetParameter(0, fx->GetParameter(4));
-  f3->SetParameter(1, fx->GetParameter(5));
-  f3->SetParameter(2, fx->GetParameter(8));
-  f3->SetParameter(3, fx->GetParameter(9));
-  f3->SetParameter(4, fx->GetParameter(10));
-  f3->SetLineColor(kMagenta);
-  f4->SetParameter(0, fx->GetParameter(6));
-  f4->SetParameter(1, fx->GetParameter(7));
-  f4->SetParameter(2, fx->GetParameter(8));
-  f4->SetParameter(3, fx->GetParameter(9));
-  f4->SetParameter(4, fx->GetParameter(10));
-  f4->SetLineColor(kCyan);
-  fbg->SetParameter(0, fx->GetParameter(9));
-  fbg->SetParameter(1, fx->GetParameter(10));
+  fx->SetParLimits(0,  0, 2);
+  fx->SetParLimits(1,  0, (hist->GetMaximum()*10));
+  fx->SetParLimits(3,  0, (hist->GetMaximum()*10));
+  fx->SetParLimits(5,  0, (hist->GetMaximum()*10));
+  fx->SetParLimits(7,  0, (hist->GetMaximum()*10));
+  fx->SetParLimits(9,  -fabs(hist->GetMaximum()*10), fabs(hist->GetMaximum()*10));
+  fx->SetParLimits(10, -100,100);
+  fx->SetParLimits(11, -100,0);
+
+  int npar = fx->GetNpar();
+  if(bgquad == 0.0){
+    fx->FixParameter((npar-1),0);
+  }
+  hist->Fit(fx,"","",lower,upper);
+  
+  double bgpar[3] = {fx->GetParameter(npar-3), fx->GetParameter(npar-2), fx->GetParameter(npar-1)};
+  fbg->SetParameters(bgpar);
   fbg->SetLineColor(kBlack);
   fbg->SetLineStyle(9);
-
-  double rebin = hist->GetBinWidth(hist->FindBin(lower));
-  double bg = fbg->Integral(lower,upper)/rebin;
-  double sum  = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
-  double area  = fx->Integral(lower,upper)/rebin - bg;
-  double area1 = f1->Integral(lower,upper)/rebin - bg;
-  double area2 = f2->Integral(lower,upper)/rebin - bg;
-  double area3 = f3->Integral(lower,upper)/rebin - bg;
-  double area4 = f4->Integral(lower,upper)/rebin - bg;
-  double chi2 = fx->GetChisquare()/(fx->GetNDF()-1);
+  f1->SetParameter(0, fx->GetParameter(0));
+  f1->SetParameter(1, fx->GetParameter(1));
+  f1->SetParameter(2, fx->GetParameter(2));
+  f1->SetParameter(3, bgpar[0]);
+  f1->SetParameter(4, bgpar[1]);
+  f1->SetParameter(5, bgpar[2]);
+  f1->SetLineColor(kBlue);
+  f2->SetParameter(0, fx->GetParameter(0));
+  f2->SetParameter(1, fx->GetParameter(3));
+  f2->SetParameter(2, fx->GetParameter(4));
+  f2->SetParameter(3, bgpar[0]);
+  f2->SetParameter(4, bgpar[1]);
+  f2->SetParameter(5, bgpar[2]);
+  f2->SetLineColor(kGreen);
+  f3->SetParameter(0, fx->GetParameter(0));
+  f3->SetParameter(1, fx->GetParameter(5));
+  f3->SetParameter(2, fx->GetParameter(6));
+  f3->SetParameter(3, bgpar[0]);
+  f3->SetParameter(4, bgpar[1]);
+  f3->SetParameter(5, bgpar[2]);
+  f3->SetLineColor(kMagenta);
+  f4->SetParameter(0, fx->GetParameter(0));
+  f4->SetParameter(1, fx->GetParameter(7));
+  f4->SetParameter(2, fx->GetParameter(8));
+  f4->SetParameter(3, bgpar[0]);
+  f4->SetParameter(4, bgpar[1]);
+  f4->SetParameter(5, bgpar[2]);
+  f4->SetLineColor(kCyan);
 
   hist->GetListOfFunctions()->Add(f1);
   hist->GetListOfFunctions()->Add(f2);
   hist->GetListOfFunctions()->Add(f3);
   hist->GetListOfFunctions()->Add(f4);
   hist->GetListOfFunctions()->Add(fbg);
+
+  double rebin = hist->GetBinWidth(hist->FindBin(lower));
+  double bg    = fbg->Integral(lower,upper)/rebin;
+  double sum   = hist->Integral(hist->FindBin(lower), hist->FindBin(upper)-1)-bg;
+  double area  = fx->Integral(lower,upper)/rebin - bg;
+  double area1 = f1->Integral(lower,upper)/rebin - bg;
+  double area2 = f2->Integral(lower,upper)/rebin - bg;
+  double area3 = f3->Integral(lower,upper)/rebin - bg;
+  double area4 = f4->Integral(lower,upper)/rebin - bg;
+  double chi2  = fx->GetChisquare()/(fx->GetNDF()-1);
+	hist->GetListOfFunctions()->Add(fbg);
   system("Color 02");
-  std::cout<< "Name: " << "gausbg" << std::endl;
-  std::cout<< "Area: " << area  << std::endl;
-  std::cout<< "Area1: " << area1  << std::endl;
-  std::cout<< "Area2: " << area2  << std::endl;
-  std::cout<< "Area3: " << area3  << std::endl;
-  std::cout<< "Area4: " << area4  << std::endl;
-  std::cout<< "Sum:  " << sum  << std::endl;
-  std::cout<< "Chi2: " << chi2 << std::endl;
+  std::cout<< "Name: "  << "gausbg" << std::endl;
+  std::cout<< "Area: "  << area  << std::endl;
+  std::cout<< "Area1: " << area1 << std::endl;
+  std::cout<< "Area2: " << area2 << std::endl;
+  std::cout<< "Area3: " << area3 << std::endl;
+  std::cout<< "Area4: " << area4 << std::endl;
+  std::cout<< "Sum:  "  << sum  << std::endl;
+  std::cout<< "Chi2: "  << chi2 << std::endl;
   gPad->Modified();
   gPad->Update();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
