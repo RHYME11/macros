@@ -9,7 +9,9 @@ Mini .c & .cpp codes for ROOT analysis.
 ## AlphaCalibration.c
 Auto calibration code for charged partile detector with triple alpha source;<span style="color:red"> GRSISort Required.</span> </br>
 **0. Compiling Commond (1st line in the code txt):** `g++ AlphaCalibration.c -Wl,--no-as-needed `root-config --cflags --libs --glibs` -lSpectrum -lMinuit -lGuiHtml -lTreePlayer -lTMVA -L/opt/local/lib -lX11 -lXpm -O2 -Wl,--copy-dt-needed-entries -L/opt/local/lib -lX11 -lXpm `grsi-config --cflags --all-libs --GRSIData-libs` -I$GRSISYS/GRSIData/include -o bin/Alphacal`;</br>
-**1. Input: FragmentTree + CalibrationFile + starting CH + ending CH;**</br>
+**1. Input:** (change it on line 525 & 528) </br>
+&nbsp;&nbsp;&nbsp;&nbsp;**1.a FragmentTree + CalibrationFile + starting CH + ending CH;**</br>
+&nbsp;&nbsp;&nbsp;&nbsp;**1.b AnalysisTree + CalibrationFile + starting CH + ending CH (for TH1 *tdiff);**</br>
 **2. Calibration Math Formula: Pu+Am+Cm.** </br>
 2.a Edit lin 328 to `TF1 *fc = tasf(hist, Form("fc_CH%i",ich), min,max,"cl");` for **Gd+Th+Cm**;</br>
 **3. Output:**</br>

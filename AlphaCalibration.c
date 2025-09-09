@@ -33,8 +33,12 @@
 #include "TEnv.h"    
 #include <dirent.h>
 
+#include "TS3.h"
+
 TList *hlist;
 TList *flist;
+TH1D *hdt1;
+TH1D *hdt2;
 TH2D *sumc;
 TH2D *sume;
 std::map<int,std::pair<double, double>> calmap; // <channel, <gain,offset>>
@@ -68,7 +72,7 @@ Double_t TripleAlphaHighE_Fun(Double_t *x, Double_t *par){
                               +0.0166 * TMath::Gaus(E,5388,sigmaAm)
                               +0.848 * TMath::Gaus(E,5485.56,sigmaAm)
                               +0.131 * TMath::Gaus(E,5442.8,sigmaAm) )
-                     +par[2] * ( 0.769 * TMath::Gaus(E,5804.77,sigmaCm)     // Cu
+                     +par[2] * ( 0.769 * TMath::Gaus(E,5804.77,sigmaCm)     // Cm
                               +0.231 * TMath::Gaus(E,5762.16,sigmaCm ) )
                      +par[4];                                               // Bg
   return return_f;
@@ -221,8 +225,10 @@ TF1 *tasf(TH1 *h, const char* name = "tas", Double_t min=-1, Double_t max=-1, Op
 void Initialize(){
   hlist = new TList; 
   flist = new TList; 
-  sumc = new TH2D("sumc", "Channel vs Uncalibarted Charge", 1e4,0,1e4, 1e3,0,1e3); 
-  sume = new TH2D("sume", "Channel vs Calibarted Energy"  , 1e4,0,1e4, 1e3,0,1e3); 
+  sumc = new TH2D("sumc", "Channel vs Uncalibarted Charge",  1e4,0,1e4, 2e3,0,2e3); 
+  sume = new TH2D("sume", "Channel vs Calibarted Energy"  ,  1e4,0,1e4, 2e3,0,2e3); 
+  hdt1 = new TH1D("hdt1", "dt = ringT-sectorT for Detecor1", 5e3,-2.5e3,2.5e3);
+  hdt2 = new TH1D("hdt2", "dt = ringT-sectorT for Deteco22", 5e3,-2.5e3,2.5e3);
 }
 
 
@@ -284,7 +290,7 @@ void MakeHist(std::string infile, const char* calfile, int minCH, int maxCH){
   printf("Making Hist DONE!  Entry: %lu / %lu \n", xentry, nentries);
 
   if(calmap.empty()){
-    for(int i=0;i<1000;i++){
+    for(int i=0;i<2000;i++){
       if(i>=minCH && i<=maxCH) {
         TH1D *hist = sumc->ProjectionX(Form("Charge_CH%i",i),i+1,i+1);
         hlist->Add(hist);
@@ -292,6 +298,101 @@ void MakeHist(std::string infile, const char* calfile, int minCH, int maxCH){
     }
   }
 }
+
+// Make Hist from Analysis.root file for channels input in main() only
+// Hist is for uncalibrated charge
+// Save hists into the global TList *hlist;
+void MakeAHist(std::string infile, const char* calfile, int minCH, int maxCH){
+
+  TChain *analytree = new TChain("AnalysisTree");
+  int size = infile.find_last_of("/");
+  std::string directory = infile.substr(0,size);
+  int num = infile.find_last_of("_");
+  std::string runnumber = infile.substr(num-5,5);
+  std::cout << "Directory: " << directory << ", Run number: " << runnumber << std::endl;
+
+  //Finds all subruns for a specific run
+  std::vector<std::string> runlist;
+  DIR * pDIR;
+  struct dirent * entry;
+  if ((pDIR = opendir(directory.c_str()))) {
+    while ((entry = readdir(pDIR))) {
+      if (strstr(entry->d_name, runnumber.c_str())) {
+        std::string file = directory;
+  file.append("/");
+  file.append(entry->d_name);
+  if(strstr(file.c_str(),"analysis")) runlist.push_back(file);
+      }
+    }
+    closedir(pDIR);
+  }   
+  std::sort(runlist.begin(),runlist.end()); // Puts subruns in order
+  for(int i = 0; i<runlist.size(); i++) {
+    analytree->Add(runlist.at(i).c_str());
+  }
+
+  long nentries = analytree->GetEntries();
+  TS3 *s3 = NULL;
+  analytree->SetBranchAddress("TS3", &s3);
+
+  TChannel::ReadCalFile(calfile);
+
+  long xentry = 0;
+  for(xentry;xentry<nentries;xentry++){
+    analytree->GetEntry(xentry);
+    for(int i=0;i<s3->GetSectorMultiplicity();i++){
+      TS3Hit *sector_hit = s3->GetSectorHit(i);
+      double sector_t = sector_hit->GetTime();
+      for(int j=0;j<s3->GetRingMultiplicity();j++){
+        TS3Hit* ring_hit = s3->GetRingHit(j); 
+        double ring_t = ring_hit->GetTime();
+        double dt = ring_t - sector_t;
+        if(sector_hit->GetDetector()==1){
+          hdt1->Fill(dt);
+        }
+        if(sector_hit->GetDetector()==2){
+          hdt2->Fill(dt);
+        }
+      }// ring loop over
+      int sector_ch = sector_hit->GetChannelNumber();
+      double sector_c = sector_hit->GetCharge();
+      if(calmap.empty()){
+        sumc->Fill(sector_c, sector_ch);
+      }else{
+        double sector_e = sector_c * calmap[sector_ch].first + calmap[sector_ch].second;
+        sume->Fill(sector_e, sector_ch);
+      }
+    }// sector loop over
+
+    for(int i=0;i<s3->GetRingMultiplicity();i++){
+      TS3Hit *ring_hit = s3->GetRingHit(i);
+      int ring_ch = ring_hit->GetChannelNumber();
+      double ring_c = ring_hit->GetCharge();
+      if(calmap.empty()){
+        sumc->Fill(ring_c, ring_ch);
+      }else{
+        double ring_e = ring_c*calmap[ring_ch].first + calmap[ring_ch].second;
+        sume->Fill(ring_e, ring_ch);
+      }
+    }// ring loop over
+    
+    if((xentry%10000)==0){
+      printf("Making Hist on entry: %lu / %lu \r", xentry, nentries);
+      fflush(stdout);
+    }
+  }
+  printf("Making Hist DONE!  Entry: %lu / %lu \n", xentry, nentries);
+
+  if(calmap.empty()){
+    for(int i=0;i<2000;i++){
+      if(i>=minCH && i<=maxCH) {
+        TH1D *hist = sumc->ProjectionX(Form("Charge_CH%i",i),i+1,i+1);
+        hlist->Add(hist);
+      }
+    }
+  }
+}
+
 
 // Run this after "MakeHist()"
 // Fit hists generated in MakeHist()
@@ -316,7 +417,7 @@ void CalHist(int minCH, int maxCH, Option_t *opt=""){
     if(top_xpeaks.size()<3){
       //found # of peaks < 3. something wrong with the current hist
       vec_gain.push_back(1);
-      vec_offs.push_back(0);
+  vec_offs.push_back(0);
       vec_reCm.push_back(-1);
       vec_reAm.push_back(-1);
       vec_rePu.push_back(-1);
@@ -420,9 +521,11 @@ int main(int agrc, char **agrv){
   ChMax_int = atoi(ChMax);
  
   Initialize(); 
-  MakeHist(infile,calfile,ChMin_int,ChMax_int);
+  //MakeHist(infile,calfile,ChMin_int,ChMax_int); // infile = fragment tree
+  MakeAHist(infile,calfile,ChMin_int,ChMax_int); // infile = analysis tree
   CalHist(ChMin_int,ChMax_int);
-  MakeHist(infile,calfile,ChMin_int,ChMax_int);
+  //MakeHist(infile,calfile,ChMin_int,ChMax_int); // infile = fragment tree
+  MakeAHist(infile,calfile,ChMin_int,ChMax_int); // infile = analysis tree
   
   outfile = "Hist.root";
   TFile *newf = new TFile(outfile, "recreate");
@@ -431,6 +534,8 @@ int main(int agrc, char **agrv){
   sume->Write();
   hlist->Write();
   flist->Write();
+  hdt1->Write();
+  hdt2->Write();
   newf->Close();
   printf("Input file:%s\nCalibration file: %s\nOutput File: %s\nStarting Channel: %s\nEnding Channel: %s\n",infile,calfile,outfile,ChMin,ChMax);
   
