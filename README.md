@@ -19,3 +19,24 @@ Auto calibration code for charged partile detector with triple alpha source;<spa
 3.b **Hist.root:** includes calibrated summary TH2 for calibration quick check;</br>
 3.c **Values Printed on Screen:** FWHM of three alpha peaks after calibration.</br>
 <span style="color:red">Return FWHM = -1, GAIN = 1, OFFSET = 0, **if the channel is empty!**</span>
+
+# Lifetime Measurement Codes
+Codes in this section work for lifetime measurement analysis.
+
+## CalChi2.cxx
+**Calculate the chi2 for the lineshape shift between experimental data and simulation data. Return chi2 with simulated lifetime-value.** </br>
+- Compiling command: line 1 </br>
+- Input: lower gamma energy, higher gamma, data root file, simulation root file. </br>
+- Notes: </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 1. histogram names need to be justed (line68~69); </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 2. binwidth for histograms need to be justed (line73~74); </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 3. scaling factor: line 79; </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 4. all output will print out on the screen; </br>
+
+
+## runCalChi2.sh
+**Run Calchi2.cxx with multiple simulation files with different lifetimes but with the same experimental data file. Will record the minimum chi2 and its corresponding scaling factor for each simulation file. The output is a txt file.** </br>
+I didn't upload it but it should be combined to CalChi2.cxx or make it human readable;
+
+## FitChi2.cxx
+**The input required the format of runCalChi2.sh output file. Then fit the curve "chi2 vs lifetime". Return min_chi2 and its lifetime. Also get two lifetimes with chi2 = chi2_min+1**  
