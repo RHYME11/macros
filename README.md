@@ -28,8 +28,8 @@ Codes in this section work for lifetime measurement analysis.
 - Compiling command: line 1 </br>
 - Input: lower gamma energy, higher gamma, data root file, simulation root file. </br>
 - Notes: </br>
-&nbsp;&nbsp;&nbsp;&nbsp; 1. histogram names need to be justed (line68~69); </br>
-&nbsp;&nbsp;&nbsp;&nbsp; 2. binwidth for histograms need to be justed (line73~74); </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 1. histogram names need to be justed (line68\~69); </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 2. binwidth for histograms need to be justed (line73\~74); </br>
 &nbsp;&nbsp;&nbsp;&nbsp; 3. scaling factor: line 79; </br>
 &nbsp;&nbsp;&nbsp;&nbsp; 4. all output will print out on the screen; </br>
 
@@ -60,8 +60,8 @@ If you only want to check FWHM, you only need "co60_linfit.cxx": </br>
 ## Calibration
 1. Edit Run.sh:
 &nbsp;&nbsp;&nbsp;&nbsp; 1.1 line9: edit calibration file path; </br>
-&nbsp;&nbsp;&nbsp;&nbsp; 1.2 line11~12: edit co60 analysistree root file paths; </br>
-&nbsp;&nbsp;&nbsp;&nbsp; 1.3 line14~19: edit sources and their relative analysistree root file paths; </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 1.2 line11\~12: edit co60 analysistree root file paths; </br>
+&nbsp;&nbsp;&nbsp;&nbsp; 1.3 line14\~19: edit sources and their relative analysistree root file paths; </br>
 2. Run `bash Run.sh`
 
 | Step in Run.sh | .cxx file                 | Input                                                                                  | Output                                                                                                                                                                                                                                                                                                | Notes                                                                                                                                                                                                                                                                                              |
