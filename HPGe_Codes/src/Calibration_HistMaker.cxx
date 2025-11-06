@@ -232,7 +232,6 @@ int main(int argc, char** argv){
   
   // Step 7: Write array_number, uncal_e and energies to file, and save hlist into root file
   std::ofstream outfile(Form("peaks_%s.dat",source.c_str()));
-  std::ofstream outfile(Form("peaks_%s.dat", source.c_str()));
   outfile << "# ArrayNum\tUncal_E\tErr\tEnergies\n";
   for(int i=0; i<64; i++){
     if(centroids[i].size() == 0) continue; // skip empty array

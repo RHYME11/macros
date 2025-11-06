@@ -9,13 +9,14 @@ PEAKS_DIR="./peaks"        # Output directory for all "./Calibration_HistMaker" 
 CAL_FILE="/tig/pterodon_data3/S2276/CalibrationFile_Oct172025.cal" #Calibration file name (edit as needed)
 # add all anlysistree root file from 60co as you need:
 ANALYSIS_FILES_CO60=(/tig/pterodon_data3/S2276/AnalysisTrees/analysis62062_000*  
-                     /tig/pterodon_data3/S2276/AnalysisTrees/analysis62062_001*) 
+                     /tig/pterodon_data3/S2276/AnalysisTrees/analysis62062_001*)  
 # Format: "source_name file_path(s)"
+# Eg, source path1 path2 path3 ...
 SOURCE_LIST=(
-  "152eu /tig/pterodon_data3/S2276/AnalysisTrees/analysis62060_000* /tig/pterodon_data3/S2276/AnalysisTrees/analysis62060_001*"
-  "133ba /tig/pterodon_data3/S2276/AnalysisTrees/analysis62061_00*"
+  "152eu /tig/pterodon_data3/S2276/AnalysisTrees/analysis62060*"
+  "133ba /tig/pterodon_data3/S2276/AnalysisTrees/analysis62061*"
   "60co ${ANALYSIS_FILES_CO60[*]}"
-  "56co /tig/pterodon_data3/S2276/AnalysisTrees/analysis62063_00*"
+  "56co /tig/pterodon_data3/S2276/AnalysisTrees/analysis62063*"
 )
 # =============================
 # STEP 1: Run co60_linfit

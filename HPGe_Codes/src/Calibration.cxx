@@ -130,7 +130,7 @@ void DrawSum(std::vector<std::string> sources){
   std::map<int, std::map<double, double>> unc; 
   std::map<int, std::map<double, double>> cal; 
   for(int i=0;i<sources.size();i++){
-    TFile *curfile = TFile::Open(Form("peaks_%s.root",sources[i].c_str()));
+    TFile *curfile = TFile::Open(Form("peaks/peaks_%s.root",sources[i].c_str()));
     if (!curfile || curfile->IsZombie()) {
       std::cerr << "Cannot open file: " << sources[i] << std::endl;
       continue;
