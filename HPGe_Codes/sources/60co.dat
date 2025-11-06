@@ -1,0 +1,9 @@
+# Gamma listed here will be considered in the calibration process.
+# If you don't want any gamma rays involving the calibration, add "#" in front of the line.
+# "I(rel), Eff, I(rel)*Eff" doesn't effect the calibration.
+# Data source: https://gammaray.inl.gov/SitePages/catalog_ge.aspx
+# Eff is from GRIFFIN: http://griffincollaboration.github.io/efficiencyCalculator/
+# 
+# Isotopes	Energy(keV)	  I(rel)	Eff	    I(rel)*Eff
+  60Co      1173.237      100	    0.1105	11.0465
+  60Co      1332.501      100	    0.1033	10.3297

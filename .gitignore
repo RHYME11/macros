@@ -6,6 +6,7 @@ bin/
 
 # Ignore binary and output folders
 HPGe_Codes/bin/*
-HPGe_Codes/peaks/*
+HPGe_Codes/peaks
+HPGe_Codes/co60
 HPGe_Codes/**/*.root
 HPGe_Codes/*.dat
