@@ -3,3 +3,9 @@
 *.swp
 *.root
 bin/
+
+# Ignore binary and output folders
+HPGe/bin/
+HPGe/peaks/
+HPGe/**/*.root
+HPGe/*.dat
