@@ -232,18 +232,19 @@ int main(int argc, char** argv){
   
   // Step 7: Write array_number, uncal_e and energies to file, and save hlist into root file
   std::ofstream outfile(Form("peaks_%s.dat",source.c_str()));
-  outfile << "# ArrayNum  Uncal_E  Err Energies\n";
-  for(int i=0;i<64;i++){
-    if(centroids[i].size()==0) continue; // skip non-existent array
-    for(int j=0;j<energies.size();j++){
-      outfile << std::setw(9) << i
-              << std::setw(9) << centroids[i][j]
-              << std::setw(9) << centroids_err[i][j]
-              << std::setw(9) << energies[j] << "\n";
-    } // j loop over
-  } // i loop over
-  outfile.close();
-  
+  std::ofstream outfile(Form("peaks_%s.dat", source.c_str()));
+  outfile << "# ArrayNum\tUncal_E\tErr\tEnergies\n";
+  for(int i=0; i<64; i++){
+    if(centroids[i].size() == 0) continue; // skip empty array
+    for(int j=0; j<centroids[i].size(); j++){
+      outfile << i << '\t'
+              << centroids[i][j] << '\t'
+              << centroids_err[i][j] << '\t'
+              << energies[j] << '\n';
+    }
+  }
+  outfile.close(); 
+ 
   TFile *newf = new TFile(Form("peaks_%s.root",source.c_str()), "recreate");
   newf->cd();
   hlist->Write();
