@@ -164,13 +164,13 @@ void FitRawHist(const std::vector<std::vector<double>>& uncal_centroids){
     TH1D *hs = (TH1D *)hlist->FindObject(Form("hs%i",i));  
     if(hs->GetEntries()==0) continue;
     for(int j=0;j<uncal_centroids[i].size();j++){
-      hs->GetXaxis()->SetRangeUser(uncal_centroids[i][j]-30, uncal_centroids[i][j]+30);
+      Int_t bin_guess = hs->FindBin(uncal_centroids[i][j]);
+      hs->SetAxisRange(bin_guess-15, bin_guess+15, "X");
       Int_t peak_bin = hs->GetMaximumBin();
-      //Int_t peak_bin = hs->FindBin(uncal_centroids[i][j]);
       double x_guess = hs->GetBinCenter(peak_bin);
       double y_guess = hs->GetBinContent(peak_bin);
       hs->GetXaxis()->SetRange(0,0); // unzoom
-      TF1 *fx = new TF1(Form("fx%i_peak%i",i,j), gaus_eqn, x_guess-20, x_guess+20,5);
+      TF1 *fx = new TF1(Form("fx%i_peak%i",i,j), gaus_eqn, x_guess-8, x_guess+8,5);
       fx->SetParameters(y_guess, x_guess, 0.5, y_guess/100., -0.1);
       fx->SetParLimits(0, y_guess*0.8, y_guess*1.2); //area
       fx->SetParLimits(1, x_guess - 10, x_guess + 10); //centroid
@@ -224,6 +224,7 @@ int main(int argc, char** argv){
     for(int j=0;j<energies.size();j++){
       // uncal_E = (cal_E - offset) / gain
       uncal_centroids[i][j] = (energies[j]-linoff[i])/lingain[i];
+      if(i==38) printf("j = %i, energies = %.2f, uncal = %.2f\n",j, energies[j], uncal_centroids[i][j]);
     }// j (ref energy) loop over
   } // i (array number) loop over
 

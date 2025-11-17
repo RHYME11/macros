@@ -5,7 +5,7 @@
 # Eff is from GRIFFIN: http://griffincollaboration.github.io/efficiencyCalculator/
 # 
 # Isotopes	Energy(keV)	  I(rel)	Eff	    I(rel)*Eff
-  133Ba	    80.997	      52	    0.3028	15.7445
+#  133Ba	    80.997	      52	    0.3028	15.7445
   133Ba     246.4	        11.69   0.2406	2.8124
   133Ba     302.851       29.78   0.2190	6.5232
   133Ba     356.013       100	    0.2025	20.2471
