@@ -74,3 +74,6 @@ If you only want to check FWHM, you only need "co60_linfit.cxx": </br>
 ## sources
 This folder includes sources peak information. Add "#" at the beginning of line that the energy you don't want to include in the calibration.
 
+## macros
+This folder so far only includes one python code to print out fwhm-relative info in co60\_linfit.dat. </br>
+`python3 macros/checkfwhm.py co60_linfit.dat`

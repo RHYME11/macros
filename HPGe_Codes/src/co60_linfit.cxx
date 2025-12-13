@@ -198,7 +198,7 @@ void CalRawHist(std::vector<double> energies, std::vector<double> energy_err){
     if(hs->GetEntries()==0) continue;
     std::vector<Double_t> xpeaks = PeakHunt(hs, nref);
     if(xpeaks.size()<nref){
-      printf("Arraynumber[%i] has %i peaks less than %i peaks listed in source.dat", i, xpeaks.size(), nref); 
+      printf("Arraynumber[%i] has %i peaks less than %i peaks listed in source.dat\n", i, xpeaks.size(), nref); 
     }else{
       double centroids[2];
       double centroid_errs[2];
