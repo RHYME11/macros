@@ -203,7 +203,8 @@ void CalRawHist(std::vector<double> energies, std::vector<double> energy_err){
       double centroids[2];
       double centroid_errs[2];
       double sigma = -1;
-      for(int j=0;j<xpeaks.size();j++){
+      //for(int j=0;j<xpeaks.size();j++){
+      for(int j=0;j<2;j++){ // there are only two peaks in co60
         double binc = hs->GetBinContent(hs->FindBin(xpeaks[j]));
         TF1 *fx = new TF1(Form("fx%i_peak%i",i,j), peak_eqn, xpeaks[j]-50, xpeaks[j]+50,5);
         fx->SetParameters(binc, xpeaks[j], 1, 15, 1, -1);

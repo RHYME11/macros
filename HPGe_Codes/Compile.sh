@@ -14,7 +14,7 @@ COMMON_FLAGS="-Wl,--no-as-needed `root-config --cflags --libs --glibs` \
 -lSpectrum -lMinuit -lGuiHtml -lTreePlayer -lTMVA \
 -L/opt/local/lib -lX11 -lXpm -O2 -Wl,--copy-dt-needed-entries \
 `grsi-config --cflags --all-libs --GRSIData-libs` \
--I$GRSISYS/GRSIData/include"
+-I$GRSISYS/GRSIData/include -lROOTTPython"
 
 # =============================
 # COMPILE THREE PROGRAMS
