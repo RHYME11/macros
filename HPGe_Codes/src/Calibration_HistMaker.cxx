@@ -190,7 +190,7 @@ void FitRawHist(const std::vector<std::vector<double>>& uncal_centroids){
 int main(int argc, char** argv){
 
   if(argc<4){
-    printf("Input Calibration file, source and Analysistree file paths");
+    printf("Input Calibration file, source and Analysistree file paths\n");
     return 1;
   }
   //Step 1: loop over root file if files are valid
