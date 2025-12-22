@@ -6,6 +6,60 @@ Mini .c & .cpp codes for ROOT analysis.
 **GausFit_orginal.C:** old version for A = 156 coincidence check;
 **GausFit.C:** try organizing codes (half-way), for A = 160 analysis.
 
+
+# AlphaCalibration
+This is same functional as AlphaCalibration.c which contains a small, self-contained ROOT/GRSI analysis project for HPGe detector calibration, raw histogram production, fitting, and final histogram generation.
+
+The project is organized as a three-step analysis pipeline controlled by bash scripts and implemented with ROOT-based C++ codes.
+
+.
+├── Compile.sh          # Compile all C++ analysis codes
+├── Run.sh              # Run the full analysis chain
+├── Clean.sh            # Clean generated binaries and outputs
+│
+├── RawHistMaker.cxx    # Step 1: create raw histograms
+├── FitRawHist.cxx      # Step 2: fit raw histograms and check resolution
+├── HistMakers.cxx     # Step 3: produce final analysis histograms
+│
+├── bins/               # Compiled executables
+└── output files        # *.root, *.dat (generated)
+
+## Requirement
+- ROOT (with histogram, fitting, and I/O support)
+
+- GRSISort (required for TIGRESS / AnalysisTree handling) only for **RawHistMaker.cxx and HistMakers.cxx**
+
+- Linux environment with bash
+
+- g++ compatible with ROOT / GRSI
+
+Make sure root-config and grsi-config are available in your environment.
+
+
+## How to use 
+1. Compile all codes: `bash Compile.sh` </br>
+This will generate executables in the bins/ directory.</br>
+ℹ️  Each .cxx file also contains its stand-alone compiling command in the first line of the source code.
+
+2. Run the complete pipline: `bash Run.sh`</br>
+The pipeline runs in the following order: </br>
+&nbsp;&nbsp;&nbsp;&nbsp;1.RawHistMaker → **raw_hists.root: **generate raw histograms </br>
+&nbsp;&nbsp;&nbsp;&nbsp;2.FitRawHist → **fit_hist.root, Res_Check.dat and Calibration.txt**fit peaks and check detector resolution </br>
+&nbsp;&nbsp;&nbsp;&nbsp;3.HistMakers → **hist.root:** generate other histograms so far including mapping two S3 detectors and time-difference between sector and rings for each detectors. </br>
+**Note: Line24 in Run.sh is switch to turn on/off if generate hist.root.**
+
+3. Remove binaries and output files: `bash Clean.sh`. </br>
+This script will prompt for confirmation before deleting files.
+
+
+| Step in `Run.sh` | `.cxx` file        | Input                                                                                                                       | Output                                                                                                                                                                     | Notes                                                                                                                                                                    |
+| ---------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Step 1           | `RawHistMaker.cxx` | 1. AnalysisTree ROOT files (can include multiple files) </br> 2. Calibration file (for channel mapping, if enabled)         | 1. `raw_hist.root`:</br>   1.1 raw (uncalibrated) energy spectra </br>   1.2 detector- and channel-level histograms </br>   1.3 basic coincidence / correlation histograms | 1. First step of the pipeline </br> 2. Converts event-level data into histograms </br> 3. No fitting or calibration is applied at this stage                             |
+| Step 2           | `FitRawHist.cxx`   | 1. `raw_hist.root` (from Step 1)                                                                                            | 1. `Res_Check.dat`, **including FWHM and fit quality info** </br> 2. Screen output with per-channel fit results                                                            | 1. Used mainly for resolution checks (e.g. 60Co) </br> 2. Empty or problematic channels may return FWHM = -1 </br> 3. Fit ranges and binning are defined inside the code |
+| Step 3           | `HistMakers.cxx`   | 1. AnalysisTree ROOT files </br> 2. Calibration file </br> 3. Optional fit results from Step 2 (depending on configuration) | 1. Final ROOT output file (e.g. `hist.root`):</br>   1.1 calibrated energy spectra </br>   1.2 coincidence matrices </br>   1.3 detector-level summary histograms          | 1. Final analysis step </br> 2. Produces physics-ready histograms </br> 3. Can be extended for experiment-specific observables                                           |
+
+
+
 ## AlphaCalibration.c
 Auto calibration code for charged partile detector with triple alpha source;<span style="color:red"> GRSISort Required.</span> </br>
 **0. Compiling Commond (1st line in the code txt):** `g++ AlphaCalibration.c -Wl,--no-as-needed `root-config --cflags --libs --glibs` -lSpectrum -lMinuit -lGuiHtml -lTreePlayer -lTMVA -L/opt/local/lib -lX11 -lXpm -O2 -Wl,--copy-dt-needed-entries -L/opt/local/lib -lX11 -lXpm `grsi-config --cflags --all-libs --GRSIData-libs` -I$GRSISYS/GRSIData/include -o bin/Alphacal`;</br>
