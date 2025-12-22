@@ -40,6 +40,7 @@ The project is organized as a three-step analysis pipeline controlled by bash sc
 │
 ├── bins/               # Compiled executables
 └── output files        # *.root, *.dat (generated)
+```
 
 ## Requirement
 - ROOT (with histogram, fitting, and I/O support)
