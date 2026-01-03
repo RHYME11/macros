@@ -13,7 +13,10 @@ HIST_EXE="${BIN_DIR}/HistMakers"
 CAL_FILE="/data1/yzhu/Projects/S2403/CalibrationFileClean.cal"
 
 # AnalysisTree input (glob will expand automatically)
-ANALYSIS_FILES=/data1/yzhu/Projects/S2403/AnalysisTrees/analysis62336*
+ANALYSIS_FILES=(
+                /data1/yzhu/Projects/S2403/AnalysisTrees/analysis62347*
+                /data1/yzhu/Projects/S2403/AnalysisTrees/analysis62348*
+)
 
 # Output files
 RAW_HIST="raw_hist.root"
@@ -32,7 +35,7 @@ echo "Calibration file : $CAL_FILE"
 echo "Analysis files   : $ANALYSIS_FILES"
 echo "============================================"
 
-#"$RAW_EXE" "$CAL_FILE" $ANALYSIS_FILES
+"$RAW_EXE" "$CAL_FILE" "${ANALYSIS_FILES[@]}"
 
 echo "[OK] Raw histogram created: $RAW_HIST"
 echo
