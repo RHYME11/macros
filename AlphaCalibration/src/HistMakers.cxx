@@ -1,6 +1,9 @@
 //g++ src/HistMakers.cxx -Wl,--no-as-needed `root-config --cflags --libs --glibs` -lSpectrum -lMinuit -lGuiHtml -lTreePlayer -lTMVA -L/opt/local/lib -lX11 -lXpm -O2 -Wl,--copy-dt-needed-entries -L/opt/local/lib -lX11 -lXpm `grsi-config --cflags --all-libs --GRSIData-libs` -I$GRSISYS/GRSIData/include -lROOTTPython -o HistMakers
 
-
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include <TFile.h>
 #include <TTree.h>
 #include <TChain.h>
@@ -18,17 +21,59 @@
 #include "TRandom3.h"
 
 
+// ================================= Calibration data structure ============================//
+struct LinCal {
+  double gain = 1.0;
+  double offset = 0.0;
+};
 
-
-
-
+// ============================== global variables ==================================//
 TList *hlist;                      
 TRandom3 rand3;
+std::unordered_map<int, LinCal> calmap;
+
 // ================================ After this, need GRSISort Structure ======================== //
 void Initialize(){                 
   hlist = new TList;               
 } 
 
+// ============================== Read Res_Check.dat ============================ //
+
+static std::unordered_map<int, LinCal> LoadResCheck(const std::string& path)
+{
+  std::unordered_map<int, LinCal> cal;
+  std::ifstream fin(path);
+  if(!fin) {
+    throw std::runtime_error("Cannot open Res_Check.dat: " + path);
+  }
+
+  std::string line;
+  while(std::getline(fin, line)) {
+    if(line.empty() || line[0] == '#') continue;
+
+    std::istringstream iss(line);
+    int ch = 0;
+    double fpu=0, fam=0, fcm=0, res=0, gain=0, offset=0;
+
+    // Res_Check.dat columns:
+    // CHANNEL FWHM(Pu) FWHM(Am) FWHM(Cm) Res% GAIN OFFSET
+    if(!(iss >> ch >> fpu >> fam >> fcm >> res >> gain >> offset)) continue;
+
+    // Skip any trailing "0 0 0 ..." line if present
+    if(ch == 0 && gain == 0.0 && offset == 0.0) continue;
+
+    cal[ch] = LinCal{gain, offset};
+  }
+
+  return cal;
+}
+
+// ======================== Calibration function ====================//
+static inline double ApplyLinCal(const std::unordered_map<int, LinCal>& cal, int ch, double charge){
+  auto it = cal.find(ch);
+  if(it == cal.end()) return charge;  // or return NAN / throw, up to you
+  return it->second.gain * charge + it->second.offset;
+}
 
 // ========================= GetS3Position() =======================//
 TVector3 GetS3Position(int det, int ring, int sec, bool rings_facing_target = false, bool smear = false) {
@@ -82,7 +127,8 @@ void MakeHist(TChain *chain, char const *calfile){
     std::cout << "Branch 'TS3' not found! TS3 variable is NULL pointer" << std::endl;
     return;                       
   }                               
-    
+  
+ 
   // ~~~~~~~~~~~~~~~~ Hists Definetion ~~~~~~~~~~~~~~~~~~~~~~~ //
   TH2D *s3_XY[2];
   TH1D *dthist[2];
@@ -94,8 +140,10 @@ void MakeHist(TChain *chain, char const *calfile){
       s3_XY_sec[i][j] = new TH2D(Form("s3_XY_Det%i_sec%i",i,j),Form("s3 XY at Secctor%i Det%i",j,i), 250, -40.0, 40.0, 250,-40.0,40.0);
     }
   }
+  TH2D *uncal_sum = new TH2D("uncal_sum","Uncalibrated summary plot", 6000,0,6000, 1100,0,1100);
+  TH2D *cal_sum   = new TH2D("cal_sum",  "Calibrated summary plot"  , 6000,0,6000, 1100,0,1100);
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                                  
+  
   if(TChannel::ReadCalFile(calfile) < 1) {
     std::cout << "No channels found in calibration file " << calfile << "!" << std::endl;
     return;                       
@@ -111,6 +159,10 @@ void MakeHist(TChain *chain, char const *calfile){
       int sec      = sec_hit->GetSector();
       double sec_c = sec_hit->GetCharge();
       double sec_t = sec_hit->GetTime();
+      int sec_ch   = sec_hit->GetChannelNumber();
+      double sec_e = ApplyLinCal(calmap, sec_ch, sec_c);
+      uncal_sum->Fill(sec_c, sec_ch);
+      cal_sum  ->Fill(sec_e, sec_ch);
       if(sec_c<50) continue;
       for(int j=0;j<s3->GetRingMultiplicity();j++){
         TS3Hit *ring_hit = s3->GetRingHit(j);
@@ -128,7 +180,16 @@ void MakeHist(TChain *chain, char const *calfile){
         s3_XY[sec_det-1]->Fill(posS3Smear.X(), posS3Smear.Y());
         s3_XY_sec[sec_det-1][sec]->Fill(posS3Smear.X(), posS3Smear.Y());
       }// j (ring) loop over
-    }// i (sector) loop over       
+    }// i (sector) loop over      
+    for(int j=0;j<s3->GetRingMultiplicity();j++){
+      TS3Hit *ring_hit = s3->GetRingHit(j);
+      double ring_c = ring_hit->GetCharge();
+      int ring_ch   = ring_hit->GetChannelNumber();
+      double ring_e = ApplyLinCal(calmap, ring_ch, ring_c);
+      uncal_sum->Fill(ring_c, ring_ch);
+      cal_sum  ->Fill(ring_e, ring_ch);
+    } // j (ring) loop over 
+
     if((xentry%10000)==0){         
       printf("Making Hist on entry: %lu / %lu \r", xentry, nentries);
       fflush(stdout);              
@@ -141,6 +202,8 @@ void MakeHist(TChain *chain, char const *calfile){
       hlist->Add(s3_XY_sec[i][j]);
     }
   }
+  hlist->Add(uncal_sum);
+  hlist->Add(cal_sum);
   
   printf("Making Raw Hist DONE!  Entry: %lu / %lu \n", xentry, nentries);
 }
@@ -164,12 +227,15 @@ int main(int argc, char** argv){
     return 1;
   }
  
-  // Step 2: make histograms
+  // Step 2: read Res_Check.dat (not necessary if you don't need calibrated energy summary plot)
+  calmap = LoadResCheck("Res_Check.dat");
+
+  // Step 3: make histograms
   char const *calfile = argv[1];
   Initialize();
   MakeHist(chain, calfile);
  
-  // Step 3: Write raw histograms into output.root
+  // Step 4: Write raw histograms into output.root
   TFile *newf = new TFile("hist.root","recreate");
   newf->cd();
   hlist->Write();
