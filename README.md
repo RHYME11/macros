@@ -23,7 +23,8 @@ photopeakfit(h, 175, 210, 191.75);
 The function signature is:
 
 ```cpp
-int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0)
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 int mode = kPhotoPeakAuto)
 ```
 
 Inputs:
@@ -32,10 +33,39 @@ Inputs:
 - `fitLow`: lower fitting limit as an x-value.
 - `fitHigh`: upper fitting limit as an x-value.
 - `peak0`: initial peak position as an x-value.
+- `mode`: optional fit mode. The default is `kPhotoPeakAuto`.
 
 The three numerical inputs are x-values, not bin numbers.
 
-The macro prints fit status, $\chi^2$, number of degrees of freedom, reduced $\chi^2$, photopeak area with uncertainty, and all fitted parameters with uncertainties. It draws the total fit as a red solid line and the background as a black dashed line on the original histogram plot.
+The macro prints the requested mode, selected fitting function, fit status, $\chi^2$, number of degrees of freedom, reduced $\chi^2$ when defined, photopeak area with uncertainty, and all fitted parameters with uncertainties. It draws the total fit as a red solid line and the background as a black dashed line on the original histogram plot.
+
+### Fit Modes
+
+The original 9-parameter fitting function is grouped into four parts:
+
+1. `gaussian_linearBg`: normal Gaussian photopeak plus linear background. This is the required base function and has 5 free parameters: `Centroid`, `FWHM`, `Height`, `bg0`, and `bg1`.
+2. `tail`: low-energy skew tail, controlled by `R` and `BETA`.
+3. `step`: smoothed step function, controlled by `STEP`.
+4. `quadBg`: quadratic background term, controlled by `bg2`.
+
+Available public modes are:
+
+| Mode | Behavior |
+| --- | --- |
+| `kPhotoPeakAuto` | Default. Starts from `gaussian_linearBg` and tries all free combinations of `tail`, `step`, and `quadBg`. |
+| `kPhotoPeakHighStat` | Uses the full function: `gaussian_linearBg_tail_step_quadBg`. This is the original 9-parameter fit. |
+| `kPhotoPeakLowStat` | Uses only `gaussian_linearBg`. |
+
+The selected fitting function is printed after each fit. Example names are:
+
+| Printed function | Included parts |
+| --- | --- |
+| `gaussian_linearBg` | Gaussian photopeak plus linear background |
+| `gaussian_linearBg_tail` | Base function plus low-energy skew tail |
+| `gaussian_linearBg_step_quadBg` | Base function plus step and quadratic background |
+| `gaussian_linearBg_tail_step_quadBg` | Full 9-parameter function |
+
+In `kPhotoPeakAuto`, candidates with optional parts are only tried when the fit range has more bins than free parameters, so the reduced $\chi^2$ is defined. The base `gaussian_linearBg` function is always allowed, even with only 4 or 5 bins, because it is the minimum useful photopeak model. Among candidates with a defined reduced $\chi^2$, auto mode chooses the fit with the smallest reduced $\chi^2$, preferring successful ROOT fit status when there is a successful candidate. If no candidate has a defined reduced $\chi^2$, auto mode falls back to `gaussian_linearBg`.
 
 ### Fitting Function
 

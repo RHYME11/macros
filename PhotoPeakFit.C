@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 // Default values copied from RadWare/GF3 where applicable:
 // R = 10, BETA = W0 / 2, STEP = 0.25,
@@ -35,6 +36,30 @@ enum PhotoPeakPar {
   kW = 7,     // FWHM: full width at half maximum.
   kH = 8,     // Height: fitted peak height.
   kNPars = 9  // Number of fit parameters.
+};
+
+enum PhotoPeakFitMode {
+  kPhotoPeakAuto = 0,
+  kPhotoPeakHighStat = 1,
+  kPhotoPeakLowStat = 2
+};
+
+struct PhotoPeakFitCandidate {
+  const char *name;
+  bool useTail;
+  bool useStep;
+  bool useQuadBg;
+};
+
+struct PhotoPeakFitTrial {
+  TF1 *func;
+  TMatrixDSym cov;
+  PhotoPeakFitCandidate candidate;
+  int status;
+  int ndf;
+  int freePars;
+  double chi2;
+  double reducedChi2;
 };
 
 double gPhotoPeakFitLow = 0.0;
@@ -129,6 +154,114 @@ double PhotoPeakMaxInRange(TH1 *hist, double fitLow, double fitHigh)
   return maxContent;
 }
 
+// ============== PhotoPeakBinCountInRange ==============
+// Purpose: Count histogram bins touched by an x range.
+// Inputs: Histogram pointer and x-value limits.
+// Outputs: Inclusive bin count inside the range.
+int PhotoPeakBinCountInRange(TH1 *hist, double fitLow, double fitHigh)
+{
+  int lowBin = hist->GetXaxis()->FindFixBin(fitLow);
+  int highBin = hist->GetXaxis()->FindFixBin(fitHigh);
+  lowBin = std::max(1, std::min(hist->GetNbinsX(), lowBin));
+  highBin = std::max(1, std::min(hist->GetNbinsX(), highBin));
+  if (lowBin > highBin) {
+    std::swap(lowBin, highBin);
+  }
+
+  return highBin - lowBin + 1;
+}
+
+// ============== PhotoPeakModeName ==============
+// Purpose: Convert a user mode value to a printable name.
+// Inputs: Fit mode integer.
+// Outputs: Static mode name string.
+const char *PhotoPeakModeName(int mode)
+{
+  if (mode == kPhotoPeakHighStat) {
+    return "high_stat";
+  }
+  if (mode == kPhotoPeakLowStat) {
+    return "low_stat";
+  }
+
+  return "auto";
+}
+
+// ============== PhotoPeakFreeParameterCount ==============
+// Purpose: Count free parameters for a candidate fitting function.
+// Inputs: Fit candidate description.
+// Outputs: Number of free parameters.
+int PhotoPeakFreeParameterCount(const PhotoPeakFitCandidate &candidate)
+{
+  int freePars = 5;
+  if (candidate.useTail) {
+    freePars += 2;
+  }
+  if (candidate.useStep) {
+    freePars += 1;
+  }
+  if (candidate.useQuadBg) {
+    freePars += 1;
+  }
+
+  return freePars;
+}
+
+// ============== PhotoPeakConfigureFunction ==============
+// Purpose: Set initial values, limits, and fixed parameters for one fit.
+// Inputs: Function, candidate, initial values, and fit limits.
+// Outputs: Configured ROOT function.
+void PhotoPeakConfigureFunction(TF1 *func, const PhotoPeakFitCandidate &candidate,
+                                double a0, double b0, double c0,
+                                double r0, double beta0, double step0,
+                                double peak0, double w0, double h0,
+                                double fitLow, double fitHigh,
+                                double range, double hUpper)
+{
+  func->SetParNames("bg0", "bg1", "bg2", "R", "BETA", "STEP",
+                    "Centroid", "FWHM", "Height");
+  func->SetParameters(a0, b0, c0, r0, beta0, step0, peak0, w0, h0);
+  func->SetParLimits(kR, 0.0, 100.0);
+  func->SetParLimits(kBeta, 1.0e-6, 10.0 * range);
+  func->SetParLimits(kStep, 0.0, 100.0);
+  func->SetParLimits(kP, fitLow, fitHigh);
+  func->SetParLimits(kW, 1.0e-6, range);
+  func->SetParLimits(kH, 0.0, hUpper);
+  if (!candidate.useTail) {
+    func->FixParameter(kR, 0.0);
+    func->FixParameter(kBeta, beta0);
+  }
+  if (!candidate.useStep) {
+    func->FixParameter(kStep, 0.0);
+  }
+  if (!candidate.useQuadBg) {
+    func->FixParameter(kC, 0.0);
+  }
+  func->SetNpx(2000);
+}
+
+// ============== PhotoPeakTrialIsBetter ==============
+// Purpose: Decide whether one auto-mode trial is better than another.
+// Inputs: New trial pointer and current best trial pointer.
+// Outputs: True when the new trial should become the best fit.
+bool PhotoPeakTrialIsBetter(const PhotoPeakFitTrial *trial, const PhotoPeakFitTrial *best)
+{
+  if (!trial || trial->ndf <= 0 || !std::isfinite(trial->reducedChi2)) {
+    return false;
+  }
+  if (!best || best->ndf <= 0 || !std::isfinite(best->reducedChi2)) {
+    return true;
+  }
+  if (trial->status == 0 && best->status != 0) {
+    return true;
+  }
+  if (trial->status != 0 && best->status == 0) {
+    return false;
+  }
+
+  return trial->reducedChi2 < best->reducedChi2;
+}
+
 // ============== PhotoPeakArea ==============
 // Purpose: Calculate RadWare/GF3 photopeak area from the photopeak terms only.
 // Inputs: Fit parameter array and histogram bin width.
@@ -185,10 +318,11 @@ double PhotoPeakAreaUncertainty(const double *par, const TMatrixDSym &cov, doubl
 }
 
 // ============== photopeakfit ==============
-// Purpose: Fit one histogram photopeak with a RadWare/GF3-style function.
-// Inputs: Histogram pointer, lower x range, upper x range, initial peak x.
+// Purpose: Fit one histogram photopeak with a selected RadWare/GF3-style function.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and mode.
 // Outputs: Fit status; prints fit results and draws total/background functions.
-int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0)
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 int mode = kPhotoPeakAuto)
 {
   if (!hist) {
     std::printf("photopeakfit ERROR: null histogram pointer.\n");
@@ -200,6 +334,12 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0)
   }
   if (fitLow > fitHigh) {
     std::swap(fitLow, fitHigh);
+  }
+  if (mode != kPhotoPeakAuto &&
+      mode != kPhotoPeakHighStat &&
+      mode != kPhotoPeakLowStat) {
+    std::printf("photopeakfit WARNING: unknown mode %d; using auto.\n", mode);
+    mode = kPhotoPeakAuto;
   }
 
   gPhotoPeakFitLow = fitLow;
@@ -221,37 +361,103 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0)
   const double maxInRange = PhotoPeakMaxInRange(hist, fitLow, fitHigh);
   const double h0 = std::max(yPeak - linearBgAtPeak, std::max(maxInRange, 1.0));
   const double hUpper = std::max(10.0 * maxInRange, h0 * 10.0);
+  const int nFitBins = PhotoPeakBinCountInRange(hist, fitLow, fitHigh);
+  const PhotoPeakFitCandidate allCandidates[] = {
+    {"gaussian_linearBg", false, false, false},
+    {"gaussian_linearBg_tail", true, false, false},
+    {"gaussian_linearBg_step", false, true, false},
+    {"gaussian_linearBg_quadBg", false, false, true},
+    {"gaussian_linearBg_tail_step", true, true, false},
+    {"gaussian_linearBg_tail_quadBg", true, false, true},
+    {"gaussian_linearBg_step_quadBg", false, true, true},
+    {"gaussian_linearBg_tail_step_quadBg", true, true, true}
+  };
+  PhotoPeakFitTrial trials[8] = {
+    {0, TMatrixDSym(kNPars), allCandidates[0], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[1], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[2], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[3], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[4], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[5], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[6], 1, 0, 0, 0.0, 0.0},
+    {0, TMatrixDSym(kNPars), allCandidates[7], 1, 0, 0, 0.0, 0.0}
+  };
+  PhotoPeakFitTrial *bestTrial = 0;
+  PhotoPeakFitTrial *fallbackTrial = 0;
 
-  TF1 *total = new TF1("PhotoPeak_total_fit", PhotoPeakEval, fitLow, fitHigh, kNPars);
-  total->SetParNames("bg0", "bg1", "bg2", "R", "BETA", "STEP",
-                     "Centroid", "FWHM", "Height");
-  total->SetParameters(a0, b0, c0, r0, beta0, step0, peak0, w0, h0);
-  total->SetParLimits(kR, 0.0, 100.0);
-  total->SetParLimits(kBeta, 1.0e-6, 10.0 * range);
-  total->SetParLimits(kStep, 0.0, 100.0);
-  total->SetParLimits(kP, fitLow, fitHigh);
-  total->SetParLimits(kW, 1.0e-6, range);
-  total->SetParLimits(kH, 0.0, hUpper);
+  for (int i = 0; i < 8; ++i) {
+    PhotoPeakFitTrial &trial = trials[i];
+    trial.freePars = PhotoPeakFreeParameterCount(trial.candidate);
+    const bool isBasic = !trial.candidate.useTail &&
+      !trial.candidate.useStep && !trial.candidate.useQuadBg;
+    const bool selectedByMode =
+      mode == kPhotoPeakAuto ||
+      (mode == kPhotoPeakHighStat && i == 7) ||
+      (mode == kPhotoPeakLowStat && i == 0);
+    if (!selectedByMode) {
+      continue;
+    }
+    if (mode == kPhotoPeakAuto && !isBasic && nFitBins <= trial.freePars) {
+      continue;
+    }
+
+    TString funcName;
+    funcName.Form("PhotoPeak_total_fit_%s", trial.candidate.name);
+    trial.func = new TF1(funcName.Data(), PhotoPeakEval, fitLow, fitHigh, kNPars);
+    PhotoPeakConfigureFunction(trial.func, trial.candidate, a0, b0, c0, r0,
+                               beta0, step0, peak0, w0, h0, fitLow, fitHigh,
+                               range, hUpper);
+    TFitResultPtr result = hist->Fit(trial.func, "RQSN");
+    trial.status = int(result);
+    trial.chi2 = trial.func->GetChisquare();
+    trial.ndf = trial.func->GetNDF();
+    trial.reducedChi2 = trial.ndf > 0 ? trial.chi2 / trial.ndf :
+      std::numeric_limits<double>::quiet_NaN();
+    if (result.Get()) {
+      trial.cov = result->GetCovarianceMatrix();
+    }
+    if (isBasic) {
+      fallbackTrial = &trial;
+    }
+    if (mode == kPhotoPeakAuto) {
+      if (PhotoPeakTrialIsBetter(&trial, bestTrial)) {
+        bestTrial = &trial;
+      }
+    } else {
+      bestTrial = &trial;
+    }
+  }
+
+  if (!bestTrial) {
+    bestTrial = fallbackTrial;
+  }
+  if (!bestTrial || !bestTrial->func) {
+    std::printf("photopeakfit ERROR: no fitting function was available.\n");
+    return 3;
+  }
+
+  for (int i = 0; i < 8; ++i) {
+    if (&trials[i] != bestTrial && trials[i].func) {
+      delete trials[i].func;
+      trials[i].func = 0;
+    }
+  }
+
+  TF1 *total = bestTrial->func;
   total->SetLineColor(kRed);
   total->SetLineStyle(1);
   total->SetLineWidth(2);
-  total->SetNpx(2000);
-
-  TFitResultPtr result = hist->Fit(total, "RQS");
-  const int status = int(result);
-  const double chi2 = total->GetChisquare();
-  const int ndf = total->GetNDF();
-  const double reducedChi2 = ndf > 0 ? chi2 / ndf : 0.0;
+  const int status = bestTrial->status;
+  const double chi2 = bestTrial->chi2;
+  const int ndf = bestTrial->ndf;
+  const double reducedChi2 = bestTrial->reducedChi2;
 
   double par[kNPars];
   for (int i = 0; i < kNPars; ++i) {
     par[i] = total->GetParameter(i);
   }
 
-  TMatrixDSym cov(kNPars);
-  if (result.Get()) {
-    cov = result->GetCovarianceMatrix();
-  }
+  TMatrixDSym cov = bestTrial->cov;
   const double binWidth = hist->GetXaxis()->GetBinWidth(hist->GetXaxis()->FindFixBin(par[kP]));
   const double area = PhotoPeakArea(par, binWidth);
   const double areaErr = PhotoPeakAreaUncertainty(par, cov, binWidth);
@@ -259,8 +465,15 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0)
 
   std::printf("\nphotopeakfit result for %s\n", hist->GetName());
   std::printf("Fit range: [%g, %g], initial peak position: %g\n", fitLow, fitHigh, peak0);
+  std::printf("Requested mode: %s\n", PhotoPeakModeName(mode));
+  std::printf("Fitting function: %s\n", bestTrial->candidate.name);
+  std::printf("Fit bins = %d, free parameters = %d\n", nFitBins, bestTrial->freePars);
   std::printf("Fit status: %d\n", status);
-  std::printf("chi2 = %.10g, ndf = %d, reduced chisq = %.10g\n", chi2, ndf, reducedChi2);
+  if (ndf > 0) {
+    std::printf("chi2 = %.10g, ndf = %d, reduced chisq = %.10g\n", chi2, ndf, reducedChi2);
+  } else {
+    std::printf("chi2 = %.10g, ndf = %d, reduced chisq = n/a\n", chi2, ndf);
+  }
   std::printf("Photopeak area = %.10g +/- %.10g\n", area, areaErr);
   std::printf("\nParameters:\n");
   for (int i = 0; i < kNPars; ++i) {
