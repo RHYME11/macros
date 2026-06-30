@@ -1,0 +1,57 @@
+# PhotoPeakFit configuration example
+# Blank lines and lines starting with # are ignored.
+#
+# Available modes:
+#   auto
+#   highstat
+#   lowstat
+#
+# Parameter names must match PhotoPeakFit.C:
+#   A, B, C, R, BETA, STEP, P, W, H
+#
+# Short parameter guide:
+#   A    constant background term.
+#   B    linear background slope in centered x.
+#   C    quadratic background coefficient.
+#   R    skew-tail fraction in percent.
+#   BETA skew-tail decay constant.
+#   STEP smoothed step relative height.
+#   P    peak centroid position.
+#   W    FWHM, full width at half maximum.
+#   H    fitted peak height.
+#
+# Syntax:
+#   mode = auto
+#   init <par> = <value>
+#   limit <par> = <low> <high>
+#   fix <par> = <value>
+
+mode = highstat
+
+# Initial values.
+# init A = 0
+# init B = 0
+# init C = 0
+# init R = 10
+# init BETA = 1.5
+# init STEP = 0.25
+# init P = 178.4
+# init W = 2.0
+# init H = 1000
+
+# Limits.
+# limit A = -1e6 1e6
+# limit B = -1e6 1e6
+# limit C = -1e6 1e6
+# limit R = 0 100
+# limit BETA = 0.01 100
+# limit STEP = 0 100
+# limit P = 1330 1335
+# limit W = 0.1 20
+# limit H = 0 1e9
+
+# Fixed parameters.
+# fix R = 10
+# fix BETA = 1.5
+# fix STEP = 0
+fix P = 178.4

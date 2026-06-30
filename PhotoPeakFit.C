@@ -15,9 +15,13 @@
 #include "TVirtualPad.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <limits>
+#include <sstream>
+#include <string>
 
 // Default values copied from RadWare/GF3 where applicable:
 // R = 10, BETA = W0 / 2, STEP = 0.25,
@@ -62,8 +66,115 @@ struct PhotoPeakFitTrial {
   double reducedChi2;
 };
 
+struct PhotoPeakFitConfig {
+  int mode;
+  bool hasInit[kNPars];
+  double init[kNPars];
+  bool hasLimit[kNPars];
+  double limitLow[kNPars];
+  double limitHigh[kNPars];
+  bool hasFix[kNPars];
+  double fix[kNPars];
+
+  PhotoPeakFitConfig()
+  {
+    mode = kPhotoPeakAuto;
+    for (int i = 0; i < kNPars; ++i) {
+      hasInit[i] = false;
+      init[i] = 0.0;
+      hasLimit[i] = false;
+      limitLow[i] = 0.0;
+      limitHigh[i] = 0.0;
+      hasFix[i] = false;
+      fix[i] = 0.0;
+    }
+  }
+};
+
 double gPhotoPeakFitLow = 0.0;
 double gPhotoPeakFitHigh = 0.0;
+
+int PhotoPeakFreeParameterCount(const PhotoPeakFitCandidate &candidate);
+
+// ============== PhotoPeakTrim ==============
+// Purpose: Remove leading and trailing whitespace from a string.
+// Inputs: String value.
+// Outputs: Trimmed string.
+std::string PhotoPeakTrim(const std::string &text)
+{
+  size_t first = 0;
+  while (first < text.size() &&
+         std::isspace(static_cast<unsigned char>(text[first]))) {
+    ++first;
+  }
+  size_t last = text.size();
+  while (last > first &&
+         std::isspace(static_cast<unsigned char>(text[last - 1]))) {
+    --last;
+  }
+
+  return text.substr(first, last - first);
+}
+
+// ============== PhotoPeakLower ==============
+// Purpose: Convert a string to lowercase for keyword matching.
+// Inputs: String value.
+// Outputs: Lowercase string.
+std::string PhotoPeakLower(const std::string &text)
+{
+  std::string out = text;
+  for (size_t i = 0; i < out.size(); ++i) {
+    out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[i])));
+  }
+
+  return out;
+}
+
+// ============== PhotoPeakUpper ==============
+// Purpose: Convert a string to uppercase for parameter matching.
+// Inputs: String value.
+// Outputs: Uppercase string.
+std::string PhotoPeakUpper(const std::string &text)
+{
+  std::string out = text;
+  for (size_t i = 0; i < out.size(); ++i) {
+    out[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[i])));
+  }
+
+  return out;
+}
+
+// ============== PhotoPeakParName ==============
+// Purpose: Convert a parameter index to the public parameter name.
+// Inputs: Parameter index.
+// Outputs: Static parameter name string.
+const char *PhotoPeakParName(int ipar)
+{
+  const char *names[kNPars] = {
+    "A", "B", "C", "R", "BETA", "STEP", "P", "W", "H"
+  };
+  if (ipar < 0 || ipar >= kNPars) {
+    return "UNKNOWN";
+  }
+
+  return names[ipar];
+}
+
+// ============== PhotoPeakParIndex ==============
+// Purpose: Convert a public parameter name to its parameter index.
+// Inputs: Parameter name string.
+// Outputs: Parameter index, or -1 when unknown.
+int PhotoPeakParIndex(const std::string &name)
+{
+  const std::string key = PhotoPeakUpper(PhotoPeakTrim(name));
+  for (int i = 0; i < kNPars; ++i) {
+    if (key == PhotoPeakParName(i)) {
+      return i;
+    }
+  }
+
+  return -1;
+}
 
 // ============== PhotoPeakEval ==============
 // Purpose: Evaluate the full RadWare/GF3-style photopeak fit function.
@@ -178,13 +289,181 @@ int PhotoPeakBinCountInRange(TH1 *hist, double fitLow, double fitHigh)
 const char *PhotoPeakModeName(int mode)
 {
   if (mode == kPhotoPeakHighStat) {
-    return "high_stat";
+    return "highstat";
   }
   if (mode == kPhotoPeakLowStat) {
-    return "low_stat";
+    return "lowstat";
   }
 
   return "auto";
+}
+
+// ============== PhotoPeakParseMode ==============
+// Purpose: Convert a user mode string to a fitting mode.
+// Inputs: Mode string and output mode reference.
+// Outputs: True when the mode string is recognized.
+bool PhotoPeakParseMode(const std::string &text, int &mode)
+{
+  const std::string key = PhotoPeakLower(PhotoPeakTrim(text));
+  if (key == "auto" || key == "kphotopeakauto") {
+    mode = kPhotoPeakAuto;
+    return true;
+  }
+  if (key == "highstat" || key == "high_stat" ||
+      key == "kphotopeakhighstat") {
+    mode = kPhotoPeakHighStat;
+    return true;
+  }
+  if (key == "lowstat" || key == "low_stat" ||
+      key == "kphotopeaklowstat") {
+    mode = kPhotoPeakLowStat;
+    return true;
+  }
+
+  return false;
+}
+
+// ============== PhotoPeakCandidateUsesPar ==============
+// Purpose: Check whether a candidate function uses a parameter.
+// Inputs: Fit candidate and parameter index.
+// Outputs: True when the parameter is active for the candidate.
+bool PhotoPeakCandidateUsesPar(const PhotoPeakFitCandidate &candidate, int ipar)
+{
+  if (ipar == kA || ipar == kB || ipar == kP ||
+      ipar == kW || ipar == kH) {
+    return true;
+  }
+  if (ipar == kC) {
+    return candidate.useQuadBg;
+  }
+  if (ipar == kR || ipar == kBeta) {
+    return candidate.useTail;
+  }
+  if (ipar == kStep) {
+    return candidate.useStep;
+  }
+
+  return false;
+}
+
+// ============== PhotoPeakConfiguredFreeParameterCount ==============
+// Purpose: Count candidate free parameters after user fixed parameters.
+// Inputs: Fit candidate and configuration.
+// Outputs: Number of free parameters.
+int PhotoPeakConfiguredFreeParameterCount(const PhotoPeakFitCandidate &candidate,
+                                          const PhotoPeakFitConfig &config)
+{
+  int freePars = PhotoPeakFreeParameterCount(candidate);
+  for (int ipar = 0; ipar < kNPars; ++ipar) {
+    if (config.hasFix[ipar] && PhotoPeakCandidateUsesPar(candidate, ipar)) {
+      --freePars;
+    }
+  }
+
+  return std::max(0, freePars);
+}
+
+// ============== PhotoPeakReadConfig ==============
+// Purpose: Read a PhotoPeakFit text configuration file.
+// Inputs: Configuration file path and output configuration reference.
+// Outputs: Zero on success, non-zero on file open error.
+int PhotoPeakReadConfig(const char *configFile, PhotoPeakFitConfig &config)
+{
+  if (!configFile || !configFile[0]) {
+    std::printf("photopeakfit ERROR: empty config file path.\n");
+    return 1;
+  }
+
+  std::ifstream input(configFile);
+  if (!input) {
+    std::printf("photopeakfit ERROR: cannot open config file '%s'.\n", configFile);
+    return 2;
+  }
+
+  std::string line;
+  int lineNumber = 0;
+  while (std::getline(input, line)) {
+    ++lineNumber;
+    const size_t commentPos = line.find('#');
+    if (commentPos != std::string::npos) {
+      line = line.substr(0, commentPos);
+    }
+    for (size_t i = 0; i < line.size(); ++i) {
+      if (line[i] == '=') {
+        line[i] = ' ';
+      }
+    }
+    line = PhotoPeakTrim(line);
+    if (line.empty()) {
+      continue;
+    }
+
+    std::istringstream words(line);
+    std::string keyword;
+    words >> keyword;
+    keyword = PhotoPeakLower(keyword);
+
+    if (keyword == "mode") {
+      std::string modeText;
+      words >> modeText;
+      int parsedMode = kPhotoPeakAuto;
+      if (!PhotoPeakParseMode(modeText, parsedMode)) {
+        std::printf("photopeakfit WARNING: %s:%d unknown mode '%s'; using auto.\n",
+                    configFile, lineNumber, modeText.c_str());
+        parsedMode = kPhotoPeakAuto;
+      }
+      config.mode = parsedMode;
+      continue;
+    }
+
+    if (keyword == "init" || keyword == "fix" || keyword == "limit") {
+      std::string parName;
+      words >> parName;
+      const int ipar = PhotoPeakParIndex(parName);
+      if (ipar < 0) {
+        std::printf("photopeakfit WARNING: %s:%d unknown parameter '%s'; ignoring line.\n",
+                    configFile, lineNumber, parName.c_str());
+        continue;
+      }
+
+      if (keyword == "init" || keyword == "fix") {
+        double value = 0.0;
+        if (!(words >> value)) {
+          std::printf("photopeakfit WARNING: %s:%d missing value; ignoring line.\n",
+                      configFile, lineNumber);
+          continue;
+        }
+        if (keyword == "init") {
+          config.hasInit[ipar] = true;
+          config.init[ipar] = value;
+        } else {
+          config.hasFix[ipar] = true;
+          config.fix[ipar] = value;
+        }
+        continue;
+      }
+
+      double low = 0.0;
+      double high = 0.0;
+      if (!(words >> low >> high)) {
+        std::printf("photopeakfit WARNING: %s:%d missing limit values; ignoring line.\n",
+                    configFile, lineNumber);
+        continue;
+      }
+      if (low > high) {
+        std::swap(low, high);
+      }
+      config.hasLimit[ipar] = true;
+      config.limitLow[ipar] = low;
+      config.limitHigh[ipar] = high;
+      continue;
+    }
+
+    std::printf("photopeakfit WARNING: %s:%d unknown keyword '%s'; ignoring line.\n",
+                configFile, lineNumber, keyword.c_str());
+  }
+
+  return 0;
 }
 
 // ============== PhotoPeakFreeParameterCount ==============
@@ -216,10 +495,10 @@ void PhotoPeakConfigureFunction(TF1 *func, const PhotoPeakFitCandidate &candidat
                                 double r0, double beta0, double step0,
                                 double peak0, double w0, double h0,
                                 double fitLow, double fitHigh,
-                                double range, double hUpper)
+                                double range, double hUpper,
+                                const PhotoPeakFitConfig &config)
 {
-  func->SetParNames("bg0", "bg1", "bg2", "R", "BETA", "STEP",
-                    "Centroid", "FWHM", "Height");
+  func->SetParNames("A", "B", "C", "R", "BETA", "STEP", "P", "W", "H");
   func->SetParameters(a0, b0, c0, r0, beta0, step0, peak0, w0, h0);
   func->SetParLimits(kR, 0.0, 100.0);
   func->SetParLimits(kBeta, 1.0e-6, 10.0 * range);
@@ -237,7 +516,47 @@ void PhotoPeakConfigureFunction(TF1 *func, const PhotoPeakFitCandidate &candidat
   if (!candidate.useQuadBg) {
     func->FixParameter(kC, 0.0);
   }
+  for (int ipar = 0; ipar < kNPars; ++ipar) {
+    if (!PhotoPeakCandidateUsesPar(candidate, ipar)) {
+      continue;
+    }
+    if (config.hasInit[ipar]) {
+      func->SetParameter(ipar, config.init[ipar]);
+    }
+    if (config.hasLimit[ipar]) {
+      func->SetParLimits(ipar, config.limitLow[ipar], config.limitHigh[ipar]);
+    }
+    if (config.hasFix[ipar]) {
+      func->FixParameter(ipar, config.fix[ipar]);
+    }
+  }
   func->SetNpx(2000);
+}
+
+// ============== PhotoPeakWarnInactiveConfig ==============
+// Purpose: Warn when config lines target parameters inactive in the final model.
+// Inputs: Final fit candidate and configuration.
+// Outputs: Warning messages printed to stdout.
+void PhotoPeakWarnInactiveConfig(const PhotoPeakFitCandidate &candidate,
+                                 const PhotoPeakFitConfig &config)
+{
+  for (int ipar = 0; ipar < kNPars; ++ipar) {
+    if (PhotoPeakCandidateUsesPar(candidate, ipar)) {
+      continue;
+    }
+    if (config.hasInit[ipar]) {
+      std::printf("photopeakfit WARNING: init %s is inactive in %s; ignoring.\n",
+                  PhotoPeakParName(ipar), candidate.name);
+    }
+    if (config.hasLimit[ipar]) {
+      std::printf("photopeakfit WARNING: limit %s is inactive in %s; ignoring.\n",
+                  PhotoPeakParName(ipar), candidate.name);
+    }
+    if (config.hasFix[ipar]) {
+      std::printf("photopeakfit WARNING: fix %s is inactive in %s; ignoring.\n",
+                  PhotoPeakParName(ipar), candidate.name);
+    }
+  }
 }
 
 // ============== PhotoPeakTrialIsBetter ==============
@@ -317,12 +636,12 @@ double PhotoPeakAreaUncertainty(const double *par, const TMatrixDSym &cov, doubl
   return variance > 0.0 ? std::sqrt(variance) : 0.0;
 }
 
-// ============== photopeakfit ==============
+// ============== PhotoPeakFitRun ==============
 // Purpose: Fit one histogram photopeak with a selected RadWare/GF3-style function.
-// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and mode.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and config.
 // Outputs: Fit status; prints fit results and draws total/background functions.
-int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
-                 int mode = kPhotoPeakAuto)
+int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                    const PhotoPeakFitConfig &config)
 {
   if (!hist) {
     std::printf("photopeakfit ERROR: null histogram pointer.\n");
@@ -335,6 +654,7 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
   if (fitLow > fitHigh) {
     std::swap(fitLow, fitHigh);
   }
+  int mode = config.mode;
   if (mode != kPhotoPeakAuto &&
       mode != kPhotoPeakHighStat &&
       mode != kPhotoPeakLowStat) {
@@ -387,7 +707,7 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
 
   for (int i = 0; i < 8; ++i) {
     PhotoPeakFitTrial &trial = trials[i];
-    trial.freePars = PhotoPeakFreeParameterCount(trial.candidate);
+    trial.freePars = PhotoPeakConfiguredFreeParameterCount(trial.candidate, config);
     const bool isBasic = !trial.candidate.useTail &&
       !trial.candidate.useStep && !trial.candidate.useQuadBg;
     const bool selectedByMode =
@@ -406,7 +726,7 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
     trial.func = new TF1(funcName.Data(), PhotoPeakEval, fitLow, fitHigh, kNPars);
     PhotoPeakConfigureFunction(trial.func, trial.candidate, a0, b0, c0, r0,
                                beta0, step0, peak0, w0, h0, fitLow, fitHigh,
-                               range, hUpper);
+                               range, hUpper, config);
     TFitResultPtr result = hist->Fit(trial.func, "RQSN");
     trial.status = int(result);
     trial.chi2 = trial.func->GetChisquare();
@@ -444,6 +764,7 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
   }
 
   TF1 *total = bestTrial->func;
+  PhotoPeakWarnInactiveConfig(bestTrial->candidate, config);
   total->SetLineColor(kRed);
   total->SetLineStyle(1);
   total->SetLineWidth(2);
@@ -507,4 +828,56 @@ int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
   }
 
   return status;
+}
+
+// ============== photopeakfit ==============
+// Purpose: Fit one photopeak with a C++ configuration object.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and config.
+// Outputs: Fit status; prints fit results and draws total/background functions.
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 const PhotoPeakFitConfig &config)
+{
+  return PhotoPeakFitRun(hist, fitLow, fitHigh, peak0, config);
+}
+
+// ============== photopeakfit ==============
+// Purpose: Fit one photopeak with a selected public mode.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and mode.
+// Outputs: Fit status; prints fit results and draws total/background functions.
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 PhotoPeakFitMode mode = kPhotoPeakAuto)
+{
+  PhotoPeakFitConfig config;
+  config.mode = mode;
+
+  return PhotoPeakFitRun(hist, fitLow, fitHigh, peak0, config);
+}
+
+// ============== photopeakfit ==============
+// Purpose: Fit one photopeak with a selected public mode integer.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and mode.
+// Outputs: Fit status; prints fit results and draws total/background functions.
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 int mode)
+{
+  PhotoPeakFitConfig config;
+  config.mode = mode;
+
+  return PhotoPeakFitRun(hist, fitLow, fitHigh, peak0, config);
+}
+
+// ============== photopeakfit ==============
+// Purpose: Fit one photopeak using a text configuration file.
+// Inputs: Histogram pointer, lower x range, upper x range, initial peak x, and config file.
+// Outputs: Fit status; prints fit results and draws total/background functions.
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
+                 const char *configFile)
+{
+  PhotoPeakFitConfig config;
+  const int readStatus = PhotoPeakReadConfig(configFile, config);
+  if (readStatus != 0) {
+    return 10 + readStatus;
+  }
+
+  return PhotoPeakFitRun(hist, fitLow, fitHigh, peak0, config);
 }
