@@ -12,7 +12,8 @@
    2. [Quick Use](#quick-use)
    3. [Function Interfaces](#function-interfaces)
    4. [Fit Modes](#fit-modes)
-   5. [PhotoPeakFit_Config.txt](#photopeakfit_configtxt)
+   5. [TSpectrum Background Removal](#tspectrum-background-removal)
+   6. [PhotoPeakFit_Config.txt](#photopeakfit_configtxt)
 
 # Overview
 
@@ -122,7 +123,7 @@ where $V_{ij}$ is the covariance matrix returned by ROOT and $p_i$ are the fit p
 
 # photopeakfit()
 
-`photopeakfit()` fits one photopeak, prints the selected model and fit results, and draws the total fit plus background on the histogram.
+`photopeakfit()` fits one photopeak, prints the selected model and fit results, and draws the total fit plus background on the histogram. It can optionally subtract a ROOT `TSpectrum` background estimate before fitting.
 
 ## Files
 
@@ -185,7 +186,7 @@ Inputs:
 - `configFile`: optional text file containing mode, initial values, limits, and fixed parameters.
 - `config`: optional C++ configuration object for macro-level control.
 
-The macro prints the requested mode, selected fitting function, fit status, $\chi^2$, number of degrees of freedom, reduced $\chi^2$ when defined, photopeak area with uncertainty, and all fitted parameters with uncertainties. It draws the total fit as a red solid line and the background as a black dashed line on the original histogram plot.
+The macro prints the requested mode, ROOT fit option, TSpectrum background settings, selected fitting function, fit status, $\chi^2$, number of degrees of freedom, reduced $\chi^2$ when defined, photopeak area with uncertainty, and all fitted parameters with uncertainties. It draws the total fit as a red solid line and the background as a black dashed line on the original histogram plot. When TSpectrum background removal is enabled, it also draws the removed TSpectrum background as a red dashed line.
 
 ## Fit Modes
 
@@ -217,6 +218,58 @@ In `kPhotoPeakAuto`, candidates with optional parts are only tried when the fit 
 
 Among candidates with a defined reduced $\chi^2$, auto mode chooses the fit with the smallest reduced $\chi^2$, preferring successful ROOT fit status when there is a successful candidate. If no candidate has a defined reduced $\chi^2$, auto mode falls back to `gaussian_linearBg`.
 
+## TSpectrum Background Removal
+
+TSpectrum background removal is controlled independently from the fit mode. The default is no TSpectrum background removal:
+
+```txt
+option = none, # global, local
+```
+
+If the `option` line is commented out, the macro uses `none`.
+
+Supported values are:
+
+| Option | Behavior |
+| --- | --- |
+| `none` | Do not call `TSpectrum::Background`; fit the original histogram. |
+| `global` | Estimate TSpectrum background over the full histogram x range, subtract it, then fit. |
+| `local` | Estimate TSpectrum background over a local range, subtract it in the fitting range, then fit. |
+
+For `global`, the default iteration count is 20:
+
+```txt
+option = global, # none, local
+iteration = 20
+```
+
+The `range` line is ignored for `global`; the full histogram x range is used, even if the histogram is currently zoomed on the canvas.
+
+For `local`, the iteration count defaults to:
+
+```txt
+iteration = clamp(round(2.5 * FWHM_bins), 6, 20)
+```
+
+where `FWHM_bins = FWHM / binWidth`. The FWHM used for this calculation is `fix W` when `W` is fixed in the config file; otherwise it is the default initial value `sqrt(9 + 0.004 * peak0)`.
+
+The local background-estimation range can be set explicitly:
+
+```txt
+option = local, # none, global
+range = 180,200
+```
+
+If `range` is commented out, the macro uses the fit range plus this padding on each side:
+
+```txt
+max(5 * FWHM, 0.5 * fitWidth, iteration * binWidth)
+```
+
+The local range is clamped to the histogram x axis. If a user-supplied local range does not cover the fit range, it is expanded to cover the fit range.
+
+When TSpectrum background removal is enabled, the fit is performed on a temporary background-subtracted histogram. The canvas still shows the original histogram. The red total fit and black fit-background curve are drawn back on the original histogram scale, and the removed TSpectrum background is shown as a red dashed line.
+
 ## PhotoPeakFit_Config.txt
 
 `Config/PhotoPeakFit_Config.txt` is an example config file. Blank lines and lines starting with `#` are ignored.
@@ -225,6 +278,7 @@ Minimal config:
 
 ```txt
 mode = auto
+# option defaults to none when omitted.
 ```
 
 Example with user constraints:
@@ -232,6 +286,9 @@ Example with user constraints:
 ```txt
 mode = highstat
 rootFitOption = RQSN
+option = local
+iteration = 12
+range = 1320,1345
 init P = 1332.5
 limit P = 1330 1335
 limit W = 0.1 20
@@ -247,16 +304,20 @@ mode = highstat
 mode = lowstat
 
 rootFitOption = RQSN
+option = none, # global, local
+iteration = 20
+range = 180,200
 init <par> = <value>
 limit <par> = <low> <high>
 fix <par> = <value>
 ```
 
-If both `mode` and `rootFitOption` are commented out, the default setup is used:
+If `mode`, `rootFitOption`, and `option` are commented out, the default setup is used:
 
 ```txt
 mode = auto
 rootFitOption = RQSN
+option = none, # global, local
 ```
 
 `rootFitOption` is passed to ROOT as:

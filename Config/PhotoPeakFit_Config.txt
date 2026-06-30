@@ -10,6 +10,7 @@
 # If mode and rootFitOption are both commented out, PhotoPeakFit.C uses:
 #   mode = auto
 #   rootFitOption = RQSN
+#   option = none
 #
 # ROOT fit option used by hist->Fit(func, option):
 #   rootFitOption = RQSN
@@ -37,13 +38,23 @@
 # Syntax:
 #   mode = auto
 #   rootFitOption = RQSN
+#   option = none
+#   option = global
+#   option = local
+#   iteration = 20
+#   range = 180,200
 #   init <par> = <value>
 #   limit <par> = <low> <high>
 #   fix <par> = <value>
 #####################################################################################
 
-mode = highstat
+mode = auto
 rootFitOption = RQSN
+
+# TSpectrum background removal.
+ option = local, # none, global, local
+# iteration = 20
+# range = 180,200
 
 # Initial values.
 # init A = 0
