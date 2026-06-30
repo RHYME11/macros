@@ -18,17 +18,23 @@
 #include <cmath>
 #include <cstdio>
 
+// Default values copied from RadWare/GF3 where applicable:
+// R = 10, BETA = W0 / 2, STEP = 0.25,
+// W0 = sqrt(9 + 0.004 * peak0).
+// Histogram-dependent defaults are set inside photopeakfit():
+// bg0, bg1, bg2 from the fit endpoints; Centroid from peak0;
+// Height from peak0 minus the estimated linear background.
 enum PhotoPeakPar {
-  kA = 0,
-  kB = 1,
-  kC = 2,
-  kR = 3,
-  kBeta = 4,
-  kStep = 5,
-  kP = 6,
-  kW = 7,
-  kH = 8,
-  kNPars = 9
+  kA = 0,     // bg0: constant term of the quadratic background.
+  kB = 1,     // bg1: linear term of the quadratic background.
+  kC = 2,     // bg2: quadratic term of the quadratic background.
+  kR = 3,     // R: skew-tail fraction in percent.
+  kBeta = 4,  // BETA: skew-tail decay constant.
+  kStep = 5,  // STEP: smoothed step relative height.
+  kP = 6,     // Centroid: peak centroid position.
+  kW = 7,     // FWHM: full width at half maximum.
+  kH = 8,     // Height: fitted peak height.
+  kNPars = 9  // Number of fit parameters.
 };
 
 double gPhotoPeakFitLow = 0.0;
