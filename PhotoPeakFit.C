@@ -68,6 +68,7 @@ struct PhotoPeakFitTrial {
 
 struct PhotoPeakFitConfig {
   int mode;
+  std::string rootFitOption;
   bool hasInit[kNPars];
   double init[kNPars];
   bool hasLimit[kNPars];
@@ -79,6 +80,7 @@ struct PhotoPeakFitConfig {
   PhotoPeakFitConfig()
   {
     mode = kPhotoPeakAuto;
+    rootFitOption = "RQSN";
     for (int i = 0; i < kNPars; ++i) {
       hasInit[i] = false;
       init[i] = 0.0;
@@ -142,6 +144,22 @@ std::string PhotoPeakUpper(const std::string &text)
   }
 
   return out;
+}
+
+// ============== PhotoPeakStripQuotes ==============
+// Purpose: Remove one matching pair of surrounding quotes from a string.
+// Inputs: String value.
+// Outputs: Unquoted string when quotes are present.
+std::string PhotoPeakStripQuotes(const std::string &text)
+{
+  const std::string trimmed = PhotoPeakTrim(text);
+  if (trimmed.size() >= 2 &&
+      ((trimmed[0] == '"' && trimmed[trimmed.size() - 1] == '"') ||
+       (trimmed[0] == '\'' && trimmed[trimmed.size() - 1] == '\''))) {
+    return trimmed.substr(1, trimmed.size() - 2);
+  }
+
+  return trimmed;
 }
 
 // ============== PhotoPeakParName ==============
@@ -413,6 +431,20 @@ int PhotoPeakReadConfig(const char *configFile, PhotoPeakFitConfig &config)
         parsedMode = kPhotoPeakAuto;
       }
       config.mode = parsedMode;
+      continue;
+    }
+
+    if (keyword == "rootfitoption" || keyword == "rootoption" ||
+        keyword == "fitoption") {
+      std::string optionText;
+      words >> optionText;
+      optionText = PhotoPeakStripQuotes(optionText);
+      if (optionText.empty()) {
+        std::printf("photopeakfit WARNING: %s:%d empty ROOT fit option; using RQSN.\n",
+                    configFile, lineNumber);
+        optionText = "RQSN";
+      }
+      config.rootFitOption = optionText;
       continue;
     }
 
@@ -727,7 +759,7 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
     PhotoPeakConfigureFunction(trial.func, trial.candidate, a0, b0, c0, r0,
                                beta0, step0, peak0, w0, h0, fitLow, fitHigh,
                                range, hUpper, config);
-    TFitResultPtr result = hist->Fit(trial.func, "RQSN");
+    TFitResultPtr result = hist->Fit(trial.func, config.rootFitOption.c_str());
     trial.status = int(result);
     trial.chi2 = trial.func->GetChisquare();
     trial.ndf = trial.func->GetNDF();
@@ -787,6 +819,7 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
   std::printf("\nphotopeakfit result for %s\n", hist->GetName());
   std::printf("Fit range: [%g, %g], initial peak position: %g\n", fitLow, fitHigh, peak0);
   std::printf("Requested mode: %s\n", PhotoPeakModeName(mode));
+  std::printf("ROOT fit option: %s\n", config.rootFitOption.c_str());
   std::printf("Fitting function: %s\n", bestTrial->candidate.name);
   std::printf("Fit bins = %d, free parameters = %d\n", nFitBins, bestTrial->freePars);
   std::printf("Fit status: %d\n", status);

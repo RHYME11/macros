@@ -231,6 +231,7 @@ Example with user constraints:
 
 ```txt
 mode = highstat
+rootFitOption = RQSN
 init P = 1332.5
 limit P = 1330 1335
 limit W = 0.1 20
@@ -245,10 +246,33 @@ mode = auto
 mode = highstat
 mode = lowstat
 
+rootFitOption = RQSN
 init <par> = <value>
 limit <par> = <low> <high>
 fix <par> = <value>
 ```
+
+If both `mode` and `rootFitOption` are commented out, the default setup is used:
+
+```txt
+mode = auto
+rootFitOption = RQSN
+```
+
+`rootFitOption` is passed to ROOT as:
+
+```cpp
+hist->Fit(func, rootFitOption);
+```
+
+The default `RQSN` means:
+
+| Option | Meaning in this macro |
+| --- | --- |
+| `R` | Use the TF1 fit range. |
+| `Q` | Quiet mode, minimum printed ROOT fit output. |
+| `S` | Return a `TFitResultPtr` for covariance and status. |
+| `N` | Do not store or draw the fit function automatically. |
 
 Parameter names must match `PhotoPeakFit.C`: `A`, `B`, `C`, `R`, `BETA`, `STEP`, `P`, `W`, and `H`.
 

@@ -1,10 +1,24 @@
-# PhotoPeakFit configuration example
+#######################################################################################
+# PhotoPeakFit configuration example                                                   
 # Blank lines and lines starting with # are ignored.
 #
 # Available modes:
 #   auto
 #   highstat
 #   lowstat
+#
+# If mode and rootFitOption are both commented out, PhotoPeakFit.C uses:
+#   mode = auto
+#   rootFitOption = RQSN
+#
+# ROOT fit option used by hist->Fit(func, option):
+#   rootFitOption = RQSN
+#
+# Current default:
+#   R  use the TF1 fit range.
+#   Q  quiet mode, minimum printed ROOT fit output.
+#   S  return a TFitResultPtr for covariance and status.
+#   N  do not store or draw the fit function automatically.
 #
 # Parameter names must match PhotoPeakFit.C:
 #   A, B, C, R, BETA, STEP, P, W, H
@@ -22,11 +36,14 @@
 #
 # Syntax:
 #   mode = auto
+#   rootFitOption = RQSN
 #   init <par> = <value>
 #   limit <par> = <low> <high>
 #   fix <par> = <value>
+#####################################################################################
 
 mode = highstat
+rootFitOption = RQSN
 
 # Initial values.
 # init A = 0
@@ -54,4 +71,4 @@ mode = highstat
 # fix R = 10
 # fix BETA = 1.5
 # fix STEP = 0
-fix P = 178.4
+# fix P = 178.4
