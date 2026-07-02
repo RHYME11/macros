@@ -6,7 +6,8 @@
    1. [Files](#files)
    2. [Fitting Function](#fitting-function)
    3. [Photopeak Area](#photopeak-area)
-   4. [TSpectrum Background Removal](#tspectrum-background-removal)
+   4. [Fit Status](#fit-status)
+   5. [TSpectrum Background Removal](#tspectrum-background-removal)
 2. [photopeakfit()](#photopeakfit)
    1. [Interface And Use](#interface-and-use)
    2. [Parameters, Initial Values, And Limits](#parameters-initial-values-and-limits)
@@ -37,9 +38,9 @@
 
 The single-peak GF3-style function is
 
-$$F(x) = G(x) + S(x) + Q(x) + B_{\mathrm{step}}(x),$$
+$$F(x) = G(x) + S(x) + L(x) + C_q(x) + B_{\mathrm{step}}(x),$$
 
-where `G` is the Gaussian photopeak, `S` is the skew-tail photopeak, `Q` is the quadratic background, and `B_step` is the smoothed step background.
+where `G` is the Gaussian photopeak, `S` is the skew-tail photopeak, `L` is the linear background, `C_q` is the quadratic background correction, and `B_step` is the smoothed step background.
 
 The definitions are
 
@@ -49,21 +50,45 @@ $$w = \frac{x - P}{\sqrt{2}\sigma},$$
 
 $$y = \frac{W}{3.33021838\,\mathrm{BETA}},$$
 
-$$G(x) = H\left(1 - \frac{R}{100}\right)e^{-w^2},$$
+Gaussian photopeak:
 
-$$S(x) = H\frac{R}{100}\frac{\exp\left(\frac{x-P}{\mathrm{BETA}}\right)\mathrm{erfc}(w+y)}{\mathrm{erfc}(y)},$$
+$$G(x) = H\left(1 - \frac{R}{100}\right)e^{-w^2}.$$
 
-$$Q(x) = A + B\,x_c + C\,x_c^2,$$
+This is the symmetric peak core. `H` is the fitted peak height, `P` is the centroid, and `W` is the FWHM through `sigma`.
 
-$$B_{\mathrm{step}}(x) = H\,\mathrm{STEP}\,\frac{\mathrm{erfc}(w)}{200},$$
+Skew-tail photopeak:
 
-with
+$$S(x) = H\frac{R}{100}\frac{\exp\left(\frac{x-P}{\mathrm{BETA}}\right)\mathrm{erfc}(w+y)}{\mathrm{erfc}(y)}.$$
+
+This is the low-energy tail component. `R` controls the tail fraction in percent, and `BETA` controls the tail decay length.
+
+Linear background:
+
+$$L(x) = A + B\,x_c.$$
+
+This is the local straight-line background under the peak. `A` is the centered constant term and `B` is the centered slope.
+
+Quadratic background correction:
+
+$$C_q(x) = C\,x_c^2.$$
+
+This optional term allows local background curvature. It is inactive in simpler candidate functions.
+
+Smoothed step background:
+
+$$B_{\mathrm{step}}(x) = H\,\mathrm{STEP}\,\frac{\mathrm{erfc}(w)}{200}.$$
+
+This optional term models a step-like continuum change across the peak. `STEP` is a relative height in percent-like units.
+
+The centered coordinate is
 
 $$x_c = x - \frac{x_{\mathrm{low}} + x_{\mathrm{high}}}{2}.$$
 
 For `multipeakfit()`, `A/B/C/R/BETA/STEP` are shared and each peak contributes its own `G_i`, `S_i`, and `B_step,i`:
 
-$$F(x) = Q(x) + \sum_i \left[G_i(x) + S_i(x) + B_{\mathrm{step},i}(x)\right].$$
+$$F(x) = L(x) + C_q(x) + \sum_i \left[G_i(x) + S_i(x) + B_{\mathrm{step},i}(x)\right].$$
+
+The fit mode controls which optional terms are active. The base model always includes the Gaussian peak and linear background. Higher-complexity candidates may add tail, step, and quadratic background terms.
 
 ## Photopeak Area
 
@@ -82,6 +107,35 @@ The printed area is converted to histogram-bin counts:
 $$\mathrm{Area} = \frac{\mathrm{Area}_{x}}{\Delta x},$$
 
 where `Delta x` is the bin width at the fitted centroid. The uncertainty is propagated from the ROOT covariance matrix. In `multipeakfit()`, each peak gets its own area and uncertainty from that peak component, not from slicing the summed curve.
+
+## Fit Status
+
+Both `photopeakfit()` and `multipeakfit()` print the integer `Fit status` returned by ROOT. This is the status from the ROOT fit/minimizer call, not the reduced chi-square.
+
+| Status | Meaning |
+| --- | --- |
+| `0` | Fit completed successfully according to ROOT/Minuit. This is the desired status. |
+| non-zero | At least one minimization or error-analysis step reported a problem. Inspect the fitted curve, parameter errors, limits/fixes, and reduced chi-square. |
+
+For Minuit-style fits, the status can be a combined code. The usual decimal places are:
+
+| Decimal place | Meaning |
+| --- | --- |
+| ones | Main minimization, usually `MIGRAD`. |
+| tens | `MINOS` error analysis, when requested. |
+| hundreds | `HESSE` covariance/error matrix calculation. |
+| thousands | `IMPROVE`, when requested. |
+
+Examples:
+
+| Fit status | Interpretation |
+| --- | --- |
+| `0` | Main minimization and requested error steps succeeded. |
+| `1`, `2`, ... | Main minimization reported a non-zero status. |
+| `100` | Main minimization may have succeeded, but `HESSE` reported status `1`. |
+| `300` | `HESSE` reported status `3`, commonly an error matrix that is not positive definite. |
+
+ROOT minimizer backends can differ in exact status details, so treat any non-zero status as a warning sign rather than a fully portable diagnosis. A fit can have `Fit status = 0` and still be physically poor if the model is wrong, peaks are missing, or the reduced chi-square is large. Conversely, a non-zero status can sometimes still produce a visually useful starting point, but the uncertainties and area errors should be treated carefully.
 
 ## TSpectrum Background Removal
 

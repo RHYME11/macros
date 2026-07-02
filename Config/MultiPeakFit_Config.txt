@@ -60,7 +60,7 @@ option = none # none, global, local
 # iteration = 20
 # range = 185,205
 
-relativePosition = false
+relativePosition = true
 relativeFwhm = true
 
 #####################################################################################
@@ -128,7 +128,7 @@ limit WSCALE = 0.5 2.0
 #####################################################################################
 
 # Global shared fixed parameters.
-fix R = 0
+# fix R = 0
 # fix BETA = 1.5
 # fix STEP = 0
 
