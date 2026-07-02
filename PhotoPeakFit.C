@@ -1900,6 +1900,87 @@ double PhotoPeakMultiAreaUncertainty(int ipeak, TF1 *func,
   return variance > 0.0 ? std::sqrt(variance) : 0.0;
 }
 
+// ============== PhotoPeakConfigTag ==============
+// Purpose: Format a user fix/limit marker for printed fit parameters.
+// Inputs: Fix flag/value and limit flag/range.
+// Outputs: Printable marker string.
+std::string PhotoPeakConfigTag(bool hasFix, double fixValue,
+                               bool hasLimit, double limitLow,
+                               double limitHigh)
+{
+  std::ostringstream out;
+  if (hasFix) {
+    out << " (fix";
+    if (std::isfinite(fixValue)) {
+      out << " " << fixValue;
+    }
+    out << ")";
+  } else if (hasLimit) {
+    out << " (limit " << limitLow << " " << limitHigh << ")";
+  }
+
+  return out.str();
+}
+
+// ============== PhotoPeakSingleConfigTag ==============
+// Purpose: Format a single-peak config marker for one parameter.
+// Inputs: Fit configuration and parameter index.
+// Outputs: Printable marker string.
+std::string PhotoPeakSingleConfigTag(const PhotoPeakFitConfig &config, int ipar)
+{
+  return PhotoPeakConfigTag(config.hasFix[ipar], config.fix[ipar],
+                            config.hasLimit[ipar],
+                            config.limitLow[ipar], config.limitHigh[ipar]);
+}
+
+// ============== PhotoPeakIndexedConfigTag ==============
+// Purpose: Format an indexed multi-peak config marker.
+// Inputs: Indexed config vector and peak index.
+// Outputs: Printable marker string.
+std::string PhotoPeakIndexedConfigTag(const std::vector<PhotoPeakIndexedParConfig> &settings,
+                                      int ipeak)
+{
+  const PhotoPeakIndexedParConfig *entry =
+    PhotoPeakIndexedEntry(settings, ipeak);
+  if (!entry) {
+    return "";
+  }
+
+  return PhotoPeakConfigTag(entry->hasFix, entry->fix,
+                            entry->hasLimit, entry->limitLow, entry->limitHigh);
+}
+
+// ============== PhotoPeakMultiConfigTag ==============
+// Purpose: Format a multi-peak config marker for one TF1 parameter.
+// Inputs: Fit configuration, parameter map, and TF1 parameter index.
+// Outputs: Printable marker string.
+std::string PhotoPeakMultiConfigTag(const PhotoPeakFitConfig &config,
+                                    const PhotoPeakMultiParMap &map,
+                                    int ipar)
+{
+  if (ipar >= kA && ipar <= kStep) {
+    return PhotoPeakSingleConfigTag(config, ipar);
+  }
+  if (ipar == map.wScaleIndex) {
+    return PhotoPeakConfigTag(config.hasWScaleFix, config.wScaleFix,
+                              config.hasWScaleLimit,
+                              config.wScaleLimitLow, config.wScaleLimitHigh);
+  }
+  for (int ipeak = 0; ipeak < map.nPeaks; ++ipeak) {
+    if (ipar == map.pIndex[ipeak]) {
+      return PhotoPeakIndexedConfigTag(config.multiP, ipeak);
+    }
+    if (ipar == map.wIndex[ipeak]) {
+      return PhotoPeakIndexedConfigTag(config.multiW, ipeak);
+    }
+    if (ipar == map.hIndex[ipeak]) {
+      return PhotoPeakIndexedConfigTag(config.multiH, ipeak);
+    }
+  }
+
+  return "";
+}
+
 // ============== PhotoPeakPrintMultiResult ==============
 // Purpose: Print grouped multi-peak values and raw fit parameters.
 // Inputs: Histogram, fit metadata, TF1, covariance, map, and config.
@@ -1969,9 +2050,11 @@ void PhotoPeakPrintMultiResult(TH1 *hist, double fitLow, double fitHigh,
 
   std::printf("\nFit parameters:\n");
   for (int ipar = 0; ipar < total->GetNpar(); ++ipar) {
-    std::printf("  %-8s = % .10g +/- %.10g\n",
+    const std::string tag = PhotoPeakMultiConfigTag(config, map, ipar);
+    std::printf("  %-8s = % .10g +/- %.10g%s\n",
                 total->GetParName(ipar),
-                total->GetParameter(ipar), total->GetParError(ipar));
+                total->GetParameter(ipar), total->GetParError(ipar),
+                tag.c_str());
   }
   std::printf("\n");
 }
@@ -2459,8 +2542,10 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
   std::printf("\nParameters:\n");
   for (int i = 0; i < kNPars; ++i) {
     const int ipar = printOrder[i];
-    std::printf("  %-5s = % .10g +/- %.10g\n",
-                total->GetParName(ipar), total->GetParameter(ipar), total->GetParError(ipar));
+    const std::string tag = PhotoPeakSingleConfigTag(config, ipar);
+    std::printf("  %-5s = % .10g +/- %.10g%s\n",
+                total->GetParName(ipar), total->GetParameter(ipar),
+                total->GetParError(ipar), tag.c_str());
   }
   std::printf("\n");
 

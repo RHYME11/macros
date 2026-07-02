@@ -281,6 +281,8 @@ When `peak0` is supplied in the function call, `peak0` wins and `init P` does no
 
 `mode` decides the active model. `init`, `limit`, and `fix` only apply to parameters active in that model. In `auto`, each candidate uses the applicable config lines; inactive config lines for the final model are reported as warnings.
 
+Printed parameter results mark user constraints from the config file with `(fix value)` or `(limit low high)`.
+
 # multipeakfit()
 
 `multipeakfit()` fits multiple photopeaks in one histogram range. It shares `A/B/C/R/BETA/STEP` across all peaks, while each peak has its own `P[i]`, `W[i]`, and `H[i]` unless relative constraints or fixed parameters make `P[i]` or `W[i]` derived.
@@ -391,6 +393,7 @@ Multi-peak defaults:
 If `fix R = 0`, the skew tail is disabled and `BETA` is removed as an active fit parameter.
 
 The printed output first lists fit metadata, then groups each peak's position, height, FWHM, and area with uncertainties. Raw TF1 parameters are printed after the grouped peak values.
+Raw parameter lines mark user constraints from the config file with `(fix value)` or `(limit low high)`.
 
 ## MultiPeakFit_Config.txt
 
