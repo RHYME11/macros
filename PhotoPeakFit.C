@@ -2039,12 +2039,21 @@ void PhotoPeakPrintMultiResult(TH1 *hist, double fitLow, double fitHigh,
                          w.value, h, binWidth);
     const double areaErr =
       PhotoPeakMultiAreaUncertainty(ipeak, total, cov, map, binWidth);
+    const std::string pTag = PhotoPeakIndexedConfigTag(config.multiP, ipeak);
+    const std::string hTag = PhotoPeakIndexedConfigTag(config.multiH, ipeak);
+    std::string wTag = PhotoPeakIndexedConfigTag(config.multiW, ipeak);
+    if (wTag.empty() && map.relativeFwhm && !map.hasWFixed[ipeak]) {
+      wTag = PhotoPeakConfigTag(config.hasWScaleFix, config.wScaleFix,
+                                config.hasWScaleLimit,
+                                config.wScaleLimitLow, config.wScaleLimitHigh);
+    }
     std::printf("  Peak %d:\n", ipeak);
-    std::printf("    Position = % .10g +/- %.10g (%s)\n",
-                p.value, p.error, p.source);
-    std::printf("    Height   = % .10g +/- %.10g\n", h, hErr);
-    std::printf("    FWHM     = % .10g +/- %.10g (%s)\n",
-                w.value, w.error, w.source);
+    std::printf("    Position = % .10g +/- %.10g (%s)%s\n",
+                p.value, p.error, p.source, pTag.c_str());
+    std::printf("    Height   = % .10g +/- %.10g%s\n",
+                h, hErr, hTag.c_str());
+    std::printf("    FWHM     = % .10g +/- %.10g (%s)%s\n",
+                w.value, w.error, w.source, wTag.c_str());
     std::printf("    Area     = % .10g +/- %.10g\n", area, areaErr);
   }
 
