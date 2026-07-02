@@ -125,6 +125,8 @@ max(5 * FWHM, 0.5 * fitWidth, iteration * binWidth)
 
 `photopeakfit()` fits one photopeak, prints the selected model and fit results, and draws the total fit plus background on the histogram.
 
+Each call removes fit curves and legends previously drawn by this macro on the current canvas before drawing the new result.
+
 ## Interface And Use
 
 Start ROOT in this directory, load the macro, open a ROOT file, draw the histogram, and fit one peak:
@@ -282,6 +284,8 @@ When `peak0` is supplied in the function call, `peak0` wins and `init P` does no
 # multipeakfit()
 
 `multipeakfit()` fits multiple photopeaks in one histogram range. It shares `A/B/C/R/BETA/STEP` across all peaks, while each peak has its own `P[i]`, `W[i]`, and `H[i]` unless relative constraints or fixed parameters make `P[i]` or `W[i]` derived.
+
+Each call removes fit curves, single-peak curves, background curves, TSpectrum curves, and legends previously drawn by this macro on the current canvas before drawing the new result.
 
 ## Interface And Use
 

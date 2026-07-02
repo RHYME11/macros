@@ -7,7 +7,9 @@
 #include "TFitResult.h"
 #include "TFitResultPtr.h"
 #include "TH1.h"
+#include "TIterator.h"
 #include "TLegend.h"
+#include "TList.h"
 #include "TMath.h"
 #include "TMatrixDSym.h"
 #include "TObject.h"
@@ -318,6 +320,41 @@ int PhotoPeakParIndex(const std::string &name)
 const char *PhotoPeakBoolName(bool value)
 {
   return value ? "true" : "false";
+}
+
+// ============== PhotoPeakRemovePreviousDrawObjects ==============
+// Purpose: Remove previous fit curves and legends created by this macro.
+// Inputs: Current ROOT pad.
+// Outputs: Current pad with old fit objects removed.
+void PhotoPeakRemovePreviousDrawObjects(TVirtualPad *pad)
+{
+  if (!pad || !pad->GetListOfPrimitives()) {
+    return;
+  }
+
+  TList *removeList = new TList();
+  TIterator *iter = pad->GetListOfPrimitives()->MakeIterator();
+  TObject *obj = 0;
+  while ((obj = iter->Next())) {
+    const TString name = obj->GetName();
+    const bool isFitObject =
+      name.BeginsWith("PhotoPeak_") ||
+      name.BeginsWith("MultiPeak_") ||
+      name.BeginsWith("PhotoPeakLegend_") ||
+      name.BeginsWith("MultiPeakLegend_");
+    if (isFitObject) {
+      removeList->Add(obj);
+    }
+  }
+  delete iter;
+
+  iter = removeList->MakeIterator();
+  while ((obj = iter->Next())) {
+    pad->GetListOfPrimitives()->Remove(obj);
+    delete obj;
+  }
+  delete iter;
+  delete removeList;
 }
 
 // ============== PhotoPeakParseBool ==============
@@ -1968,6 +2005,7 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
       hist->Draw();
     }
   }
+  PhotoPeakRemovePreviousDrawObjects(gPad);
 
   TF1 *totalDraw = total;
   if (bgResult.mode != kPhotoPeakTspectrumBgNone) {
@@ -2007,6 +2045,7 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
     kPink + 7, kTeal + 3
   };
   TLegend *legend = new TLegend(0.12, 0.70, 0.42, 0.90);
+  legend->SetName("MultiPeakLegend_fit");
   legend->SetBorderSize(0);
   legend->SetFillStyle(0);
   legend->SetTextSize(0.035);
@@ -2182,8 +2221,11 @@ int PhotoPeakMultiFitRun(TH1 *hist, double fitLow, double fitHigh,
     trial.reducedChi2 = trial.ndf > 0 ? trial.chi2 / trial.ndf :
       std::numeric_limits<double>::quiet_NaN();
     TMatrixDSym currentCov(static_cast<int>(maps[i].parNames.size()));
-    if (result.Get()) {
-      currentCov = result->GetCovarianceMatrix();
+    if (result.Get() && result->CovMatrixStatus() > 0) {
+      const TMatrixDSym resultCov = result->GetCovarianceMatrix();
+      if (resultCov.GetNrows() == currentCov.GetNrows()) {
+        currentCov = resultCov;
+      }
     }
     if (isBasic) {
       fallbackTrial = &trial;
@@ -2344,7 +2386,7 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
     trial.ndf = trial.func->GetNDF();
     trial.reducedChi2 = trial.ndf > 0 ? trial.chi2 / trial.ndf :
       std::numeric_limits<double>::quiet_NaN();
-    if (result.Get()) {
+    if (result.Get() && result->CovMatrixStatus() > 0) {
       trial.cov = result->GetCovarianceMatrix();
     }
     if (isBasic) {
@@ -2463,6 +2505,7 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
       hist->Draw();
     }
   }
+  PhotoPeakRemovePreviousDrawObjects(gPad);
   totalDraw->Draw("same");
   bg->Draw("same");
   if (tspectrumBg) {
