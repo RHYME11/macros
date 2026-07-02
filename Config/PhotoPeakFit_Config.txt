@@ -35,6 +35,12 @@
 #   W    FWHM, full width at half maximum.
 #   H    fitted peak height.
 #
+# Position rule:
+#   photopeakfit(h, low, high, peak0, configFile)
+#     uses peak0 from the function call; init P does not override it.
+#   photopeakfit(h, low, high, configFile)
+#     requires init P below and uses it as the initial peak position.
+#
 # Syntax:
 #   mode = auto
 #   rootFitOption = RQSN

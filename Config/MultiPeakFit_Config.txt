@@ -1,0 +1,151 @@
+#######################################################################################
+# MultiPeakFit complete 3-peak configuration example
+# Blank lines and lines starting with # are ignored.
+#
+# This file is for multipeakfit(). PhotoPeakFit_Config.txt remains the single-peak
+# example for photopeakfit().
+#
+# mode controls which GF3-style shape/background candidate is used:
+#   auto      try allowed candidates and choose the best reduced chi-square.
+#   highstat  use the full shared shape/background model.
+#   lowstat   use Gaussian peaks plus linear background.
+#
+# rootFitOption is passed to ROOT hist->Fit(func, option).
+# Default RQSN means:
+#   R  use TF1 range.
+#   Q  quiet ROOT fit output.
+#   S  return TFitResultPtr for covariance.
+#   N  do not store/draw fit automatically.
+#
+# option controls TSpectrum background removal before fitting:
+#   none    do not subtract TSpectrum background.
+#   global  estimate TSpectrum background over the full histogram.
+#   local   estimate TSpectrum background over a local range.
+#
+# relativePosition:
+#   false  fit each non-fixed P[i] independently.
+#   true   use one PMASTER parameter:
+#            P_i = PMASTER + (P0_i - P0_0)
+#          If any fix P[i] is set, the first fixed P[i] anchors all positions.
+#
+# relativeFwhm:
+#   false  fit each non-fixed W[i] independently.
+#   true   use one WSCALE parameter:
+#            W_i = WSCALE * W0_i
+#          fix W[i] fixes only that peak width; other non-fixed widths use WSCALE.
+#
+# Global scalar parameters shared by all peaks:
+#   A, B, C, R, BETA, STEP
+#
+# Per-peak indexed parameters:
+#   P[i]  peak centroid/reference position
+#   W[i]  peak FWHM/reference FWHM
+#   H[i]  peak height
+#
+# Shared FWHM scale parameter:
+#   WSCALE
+#
+# Position rule:
+#   multipeakfit(h, low, high, {p0, p1, p2}, configFile)
+#     uses peak positions from the function call; init P[i] does not override them.
+#   multipeakfit(h, low, high, configFile)
+#     requires contiguous init P[0], init P[1], ... values below.
+#####################################################################################
+
+mode = auto
+rootFitOption = RQSN
+
+# TSpectrum background removal.
+option = none # none, global, local
+# iteration = 20
+# range = 185,205
+
+relativePosition = false
+relativeFwhm = true
+
+#####################################################################################
+# Initial values
+#####################################################################################
+
+# Global shared initial values.
+# init A = 0
+# init B = 0
+# init C = 0
+# init R = 10
+# init BETA = 1.5
+# init STEP = 0.25
+
+# FWHM scale. Used when relativeFwhm = true.
+# init WSCALE = 1.0
+
+# Peak 0 position/FWHM/height initial values.
+# init P[0] = 191.75
+# init W[0] = 3.0
+# init H[0] = 800
+
+# Peak 1 position/FWHM/height initial values.
+# init P[1] = 194.20
+# init W[1] = 3.1
+# init H[1] = 500
+
+# Peak 2 position/FWHM/height initial values.
+# init P[2] = 198.10
+# init W[2] = 3.2
+# init H[2] = 300
+
+#####################################################################################
+# Limits
+#####################################################################################
+
+# Global shared limits.
+# limit A = -1e6 1e6
+# limit B = -1e6 1e6
+# limit C = -1e6 1e6
+# limit R = 0 100
+# limit BETA = 0.01 100
+# limit STEP = 0 100
+
+# FWHM scale limits. Used when relativeFwhm = true.
+limit WSCALE = 0.5 2.0
+
+# Peak 0 limits.
+# limit P[0] = 190 193
+# limit W[0] = 0.1 20
+# limit H[0] = 0 1e9
+
+# Peak 1 limits.
+# limit P[1] = 193 196
+# limit W[1] = 0.1 20
+# limit H[1] = 0 1e9
+
+# Peak 2 limits.
+# limit P[2] = 197 200
+# limit W[2] = 0.1 20
+# limit H[2] = 0 1e9
+
+#####################################################################################
+# Fixed parameters
+#####################################################################################
+
+# Global shared fixed parameters.
+fix R = 0
+# fix BETA = 1.5
+# fix STEP = 0
+
+# FWHM scale fixed parameter. Used when relativeFwhm = true.
+# fix WSCALE = 1.0
+
+# Peak 0 fixed parameters.
+# fix P[0] = 191.75
+# fix W[0] = 3.0
+# fix H[0] = 800
+
+# Peak 1 fixed parameters.
+# fix P[1] = 194.20
+# fix W[1] = 3.2
+# fix H[1] = 500
+
+# Peak 2 fixed parameters.
+# fix P[2] = 198.10
+# fix W[2] = 3.2
+# fix H[2] = 300

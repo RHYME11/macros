@@ -3,29 +3,43 @@
 ## Contents
 
 1. [Overview](#overview)
-   1. [Fitting Function](#fitting-function)
-   2. [Parameters](#parameters)
-   3. [Defaults And Limits](#defaults-and-limits)
-   4. [Photopeak Area](#photopeak-area)
-2. [photopeakfit()](#photopeakfit)
    1. [Files](#files)
-   2. [Quick Use](#quick-use)
-   3. [Function Interfaces](#function-interfaces)
-   4. [Fit Modes](#fit-modes)
-   5. [TSpectrum Background Removal](#tspectrum-background-removal)
-   6. [PhotoPeakFit_Config.txt](#photopeakfit_configtxt)
+   2. [Fitting Function](#fitting-function)
+   3. [Photopeak Area](#photopeak-area)
+   4. [TSpectrum Background Removal](#tspectrum-background-removal)
+2. [photopeakfit()](#photopeakfit)
+   1. [Interface And Use](#interface-and-use)
+   2. [Parameters, Initial Values, And Limits](#parameters-initial-values-and-limits)
+   3. [Fit Mode And Options](#fit-mode-and-options)
+   4. [PhotoPeakFit_Config.txt](#photopeakfit_configtxt)
+3. [multipeakfit()](#multipeakfit)
+   1. [Interface And Use](#interface-and-use-1)
+   2. [Parameters, Initial Values, And Limits](#parameters-initial-values-and-limits-1)
+   3. [Fit Mode And Options](#fit-mode-and-options-1)
+   4. [MultiPeakFit_Config.txt](#multipeakfit_configtxt)
 
 # Overview
 
-`PhotoPeakFit.C` is a CERN ROOT macro for fitting one RadWare/GF3-style photopeak in a histogram. It can be loaded directly in ROOT without compilation.
+`PhotoPeakFit.C` is a CERN ROOT macro for RadWare/GF3-style photopeak fitting. It can be loaded directly in ROOT without compilation and provides two public fitting calls:
+
+- `photopeakfit()` for one photopeak.
+- `multipeakfit()` for multiple photopeaks in one common fit range.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `PhotoPeakFit.C` | ROOT macro containing fit functions, config parsing, result printing, and drawing. |
+| `Config/PhotoPeakFit_Config.txt` | Example config file for single-peak `photopeakfit()`. |
+| `Config/MultiPeakFit_Config.txt` | Example config file for multi-peak `multipeakfit()`. |
 
 ## Fitting Function
 
-The total fit function is
+The single-peak GF3-style function is
 
 $$F(x) = G(x) + S(x) + Q(x) + B_{\mathrm{step}}(x),$$
 
-where the four terms are the Gaussian photopeak, skew-tail photopeak, quadratic background, and smoothed step background.
+where `G` is the Gaussian photopeak, `S` is the skew-tail photopeak, `Q` is the quadratic background, and `B_step` is the smoothed step background.
 
 The definitions are
 
@@ -35,71 +49,25 @@ $$w = \frac{x - P}{\sqrt{2}\sigma},$$
 
 $$y = \frac{W}{3.33021838\,\mathrm{BETA}},$$
 
-and
-
 $$G(x) = H\left(1 - \frac{R}{100}\right)e^{-w^2},$$
 
 $$S(x) = H\frac{R}{100}\frac{\exp\left(\frac{x-P}{\mathrm{BETA}}\right)\mathrm{erfc}(w+y)}{\mathrm{erfc}(y)},$$
 
 $$Q(x) = A + B\,x_c + C\,x_c^2,$$
 
-$$B_{\mathrm{step}}(x) = H\,\mathrm{STEP}\,\frac{\mathrm{erfc}(w)}{200}.$$
+$$B_{\mathrm{step}}(x) = H\,\mathrm{STEP}\,\frac{\mathrm{erfc}(w)}{200},$$
 
-Here
+with
 
 $$x_c = x - \frac{x_{\mathrm{low}} + x_{\mathrm{high}}}{2}.$$
 
-The background curve drawn by the macro is
+For `multipeakfit()`, `A/B/C/R/BETA/STEP` are shared and each peak contributes its own `G_i`, `S_i`, and `B_step,i`:
 
-$$B_{\mathrm{drawn}}(x) = Q(x) + B_{\mathrm{step}}(x).$$
-
-## Parameters
-
-Parameter names match the enum order in `PhotoPeakFit.C`:
-
-| Parameter | Meaning |
-| --- | --- |
-| `A` | Constant term of the quadratic background. |
-| `B` | Linear background slope in centered x. |
-| `C` | Quadratic background coefficient. |
-| `R` | Skew-tail fraction in percent. |
-| `BETA` | Skew-tail decay constant. |
-| `STEP` | Smoothed step relative height. |
-| `P` | Peak centroid position. |
-| `W` | FWHM, full width at half maximum. |
-| `H` | Fitted peak height. |
-
-## Defaults And Limits
-
-Default initial values are:
-
-| Parameter | Default initial value |
-| --- | --- |
-| `A` | $\frac{y(x_{\mathrm{low}}) + y(x_{\mathrm{high}})}{2}$ |
-| `B` | $\frac{y(x_{\mathrm{high}}) - y(x_{\mathrm{low}})}{x_{\mathrm{high}} - x_{\mathrm{low}}}$ |
-| `C` | $0$ |
-| `R` | $10$ |
-| `BETA` | $\frac{W_0}{2}$ |
-| `STEP` | $0.25$ |
-| `P` | `peak0` |
-| `W` | $W_0 = \sqrt{9 + 0.004\,\mathrm{peak0}}$ |
-| `H` | $y(\mathrm{peak0})$ minus estimated linear background |
-
-Default parameter limits are:
-
-| Parameter | Default limit |
-| --- | --- |
-| `A`, `B`, `C` | No explicit limit |
-| `R` | $[0,100]$ |
-| `BETA` | $[10^{-6}, 10(x_{\mathrm{high}} - x_{\mathrm{low}})]$ |
-| `STEP` | $[0,100]$ |
-| `P` | $[x_{\mathrm{low}}, x_{\mathrm{high}}]$ |
-| `W` | $[10^{-6}, x_{\mathrm{high}} - x_{\mathrm{low}}]$ |
-| `H` | $[0, 10\,y_{\max}]$ in the fitting range |
+$$F(x) = Q(x) + \sum_i \left[G_i(x) + S_i(x) + B_{\mathrm{step},i}(x)\right].$$
 
 ## Photopeak Area
 
-The photopeak area is calculated from only the first two photopeak terms, $G(x)$ and $S(x)$. The quadratic background and smoothed step background are not included.
+The photopeak area is calculated from only the Gaussian and skew-tail photopeak terms. The quadratic background and smoothed step background are not included.
 
 Define
 
@@ -109,32 +77,57 @@ The continuous x-integrated area is
 
 $$\mathrm{Area}_{x} = H\left[\frac{R}{100}\,2\,\mathrm{BETA}\,d + \left(1 - \frac{R}{100}\right)W\,1.06446705\right].$$
 
-For the value printed by `photopeakfit`, this continuous area is converted to the histogram-bin-count convention:
+The printed area is converted to histogram-bin counts:
 
 $$\mathrm{Area} = \frac{\mathrm{Area}_{x}}{\Delta x},$$
 
-where $\Delta x$ is the histogram bin width at the fitted centroid. This matches area estimates based on summing histogram bin contents. For a histogram with $\Delta x = 0.5$, the printed area is twice the continuous x-integrated area.
+where `Delta x` is the bin width at the fitted centroid. The uncertainty is propagated from the ROOT covariance matrix. In `multipeakfit()`, each peak gets its own area and uncertainty from that peak component, not from slicing the summed curve.
 
-The uncertainty is propagated from the fit covariance matrix:
+## TSpectrum Background Removal
 
-$$\sigma^2_{\mathrm{Area}} = \sum_i\sum_j \frac{\partial \mathrm{Area}}{\partial p_i} V_{ij} \frac{\partial \mathrm{Area}}{\partial p_j},$$
+TSpectrum background removal is controlled by the config keyword `option`, independently from fit mode.
 
-where $V_{ij}$ is the covariance matrix returned by ROOT and $p_i$ are the fit parameters. Only derivatives with respect to `R`, `BETA`, `W`, and `H` are non-zero for this area formula.
+| Option | Behavior |
+| --- | --- |
+| `none` | Do not call `TSpectrum::Background`; fit the original histogram. |
+| `global` | Estimate TSpectrum background over the full histogram x range, subtract it, then fit. |
+| `local` | Estimate TSpectrum background over a local range, subtract it in the fitting range, then fit. |
+
+If `option` is omitted, the default is `none`.
+
+For `global`, the default iteration count is 20:
+
+```txt
+option = global
+iteration = 20
+```
+
+For `local`, the default iteration count is:
+
+```txt
+iteration = clamp(round(2.5 * FWHM_bins), 6, 20)
+```
+
+The local range can be set explicitly:
+
+```txt
+option = local
+range = 180,200
+```
+
+If `range` is omitted, the macro uses the fit range plus this padding:
+
+```txt
+max(5 * FWHM, 0.5 * fitWidth, iteration * binWidth)
+```
 
 # photopeakfit()
 
-`photopeakfit()` fits one photopeak, prints the selected model and fit results, and draws the total fit plus background on the histogram. It can optionally subtract a ROOT `TSpectrum` background estimate before fitting.
+`photopeakfit()` fits one photopeak, prints the selected model and fit results, and draws the total fit plus background on the histogram.
 
-## Files
+## Interface And Use
 
-| File | Purpose |
-| --- | --- |
-| `PhotoPeakFit.C` | ROOT macro containing the fit function, mode selection, config parser, fit output, and drawing. |
-| `Config/PhotoPeakFit_Config.txt` | Example user-editable config file for mode, initial values, limits, and fixed parameters. |
-
-## Quick Use
-
-Start ROOT in this directory, load the macro, open the ROOT file, draw the histogram, and fit one peak:
+Start ROOT in this directory, load the macro, open a ROOT file, draw the histogram, and fit one peak:
 
 ```cpp
 .L PhotoPeakFit.C
@@ -155,133 +148,111 @@ Config file:
 
 ```cpp
 photopeakfit(h, 175, 210, 191.75, "Config/PhotoPeakFit_Config.txt");
+photopeakfit(h, 175, 210, "Config/PhotoPeakFit_Config.txt");
 ```
 
-When a config file is used, `photopeakfit` reads the file each time it is called. You can keep the ROOT session open, edit `Config/PhotoPeakFit_Config.txt`, and run the same command again.
-
-The three numerical inputs are x-values, not bin numbers.
-
-## Function Interfaces
-
-The public interfaces are:
+Public interfaces:
 
 ```cpp
 int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
                  PhotoPeakFitMode mode = kPhotoPeakAuto);
 
 int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
-                 const char *configFile);
+                 int mode);
 
 int photopeakfit(TH1 *hist, double fitLow, double fitHigh, double peak0,
-                 const PhotoPeakFitConfig &config);
+                 const char *configFile);
+
+int photopeakfit(TH1 *hist, double fitLow, double fitHigh,
+                 const char *configFile);
 ```
+
+A C++ `PhotoPeakFitConfig` overload also exists for advanced macro control.
 
 Inputs:
 
-- `hist`: pointer to the histogram to fit.
-- `fitLow`: lower fitting limit as an x-value.
-- `fitHigh`: upper fitting limit as an x-value.
+- `hist`: histogram pointer.
+- `fitLow`, `fitHigh`: fit limits as x-values.
 - `peak0`: initial peak position as an x-value.
-- `mode`: optional fit mode. The default is `kPhotoPeakAuto`.
-- `configFile`: optional text file containing mode, initial values, limits, and fixed parameters.
-- `config`: optional C++ configuration object for macro-level control.
+- `mode`: optional fitting mode.
+- `configFile`: optional text config file.
 
-The macro prints the requested mode, ROOT fit option, TSpectrum background settings, selected fitting function, fit status, $\chi^2$, number of degrees of freedom, reduced $\chi^2$ when defined, photopeak area with uncertainty, and all fitted parameters with uncertainties. It draws the total fit as a red solid line and the background as a black dashed line on the original histogram plot. When TSpectrum background removal is enabled, it also draws the removed TSpectrum background as a red dashed line.
+Position rule:
 
-## Fit Modes
+- If `peak0` is supplied in the function call, it defines the initial peak position.
+- If `peak0` is omitted, `configFile` must define `init P`.
+- `limit P` and `fix P` remain valid constraints in both cases.
 
-The macro supports three public fit modes:
+## Parameters, Initial Values, And Limits
+
+| Parameter | Meaning | Default initial value | Default limit |
+| --- | --- | --- | --- |
+| `A` | Constant background term. | `(y(fitLow) + y(fitHigh)) / 2` | none |
+| `B` | Linear background slope in centered x. | `(y(fitHigh) - y(fitLow)) / (fitHigh - fitLow)` | none |
+| `C` | Quadratic background coefficient. | `0` | none |
+| `R` | Skew-tail fraction in percent. | `10` | `[0, 100]` |
+| `BETA` | Skew-tail decay constant. | `W0 / 2` | `[1e-6, 10 * fitWidth]` |
+| `STEP` | Smoothed step relative height. | `0.25` | `[0, 100]` |
+| `P` | Peak centroid position. | `peak0`, or `init P` in config-only calls | `[fitLow, fitHigh]` |
+| `W` | FWHM. | `sqrt(9 + 0.004 * peak0)` | `[1e-6, fitWidth]` |
+| `H` | Peak height. | peak bin content minus estimated linear background | `[0, 10 * yMax]` |
+
+## Fit Mode And Options
+
+Fit modes:
 
 | Mode | Behavior |
 | --- | --- |
-| `kPhotoPeakAuto` | Default. Tries allowed candidate models and selects the best reduced $\chi^2$. |
-| `kPhotoPeakHighStat` | Uses the full 9-parameter function. |
-| `kPhotoPeakLowStat` | Uses only the Gaussian plus linear background base function. |
+| `kPhotoPeakAuto` / `auto` | Try allowed candidates and choose the best reduced chi-square. |
+| `kPhotoPeakHighStat` / `highstat` | Use the full 9-parameter function. |
+| `kPhotoPeakLowStat` / `lowstat` | Use Gaussian plus linear background. |
 
-The 9-parameter fitting function is grouped into four parts:
+Candidate model parts:
 
-1. `gaussian_linearBg`: normal Gaussian photopeak plus linear background. This is the required base function and has 5 free parameters: `P`, `W`, `H`, `A`, and `B`.
-2. `tail`: low-energy skew tail, controlled by `R` and `BETA`.
-3. `step`: smoothed step function, controlled by `STEP`.
-4. `quadBg`: quadratic background term, controlled by `C`.
-
-Available candidate names printed by the macro include:
-
-| Printed function | Included parts |
+| Part | Parameters |
 | --- | --- |
-| `gaussian_linearBg` | Gaussian photopeak plus linear background. |
-| `gaussian_linearBg_tail` | Base function plus low-energy skew tail. |
-| `gaussian_linearBg_step_quadBg` | Base function plus step and quadratic background. |
-| `gaussian_linearBg_tail_step_quadBg` | Full 9-parameter function. |
+| Gaussian plus linear background | `A`, `B`, `P`, `W`, `H` |
+| Skew tail | `R`, `BETA` |
+| Smoothed step | `STEP` |
+| Quadratic background | `C` |
 
-In `kPhotoPeakAuto`, candidates with optional parts are only tried when the fit range has more bins than free parameters, so the reduced $\chi^2$ is defined. User fixed parameters reduce the free-parameter count for this check. The base `gaussian_linearBg` function is always allowed, even with only 4 or 5 bins, because it is the minimum useful photopeak model.
+`rootFitOption` is passed to ROOT:
 
-Among candidates with a defined reduced $\chi^2$, auto mode chooses the fit with the smallest reduced $\chi^2$, preferring successful ROOT fit status when there is a successful candidate. If no candidate has a defined reduced $\chi^2$, auto mode falls back to `gaussian_linearBg`.
-
-## TSpectrum Background Removal
-
-TSpectrum background removal is controlled independently from the fit mode. The default is no TSpectrum background removal:
-
-```txt
-option = none, # global, local
+```cpp
+hist->Fit(func, rootFitOption);
 ```
 
-If the `option` line is commented out, the macro uses `none`.
+The default `RQSN` means:
 
-Supported values are:
-
-| Option | Behavior |
+| ROOT option | Meaning |
 | --- | --- |
-| `none` | Do not call `TSpectrum::Background`; fit the original histogram. |
-| `global` | Estimate TSpectrum background over the full histogram x range, subtract it, then fit. |
-| `local` | Estimate TSpectrum background over a local range, subtract it in the fitting range, then fit. |
+| `R` | Use the TF1 fit range. |
+| `Q` | Quiet fit output. |
+| `S` | Return `TFitResultPtr` for covariance and status. |
+| `N` | Do not store or draw ROOT's automatic fit function. |
 
-For `global`, the default iteration count is 20:
-
-```txt
-option = global, # none, local
-iteration = 20
-```
-
-The `range` line is ignored for `global`; the full histogram x range is used, even if the histogram is currently zoomed on the canvas.
-
-For `local`, the iteration count defaults to:
-
-```txt
-iteration = clamp(round(2.5 * FWHM_bins), 6, 20)
-```
-
-where `FWHM_bins = FWHM / binWidth`. The FWHM used for this calculation is `fix W` when `W` is fixed in the config file; otherwise it is the default initial value `sqrt(9 + 0.004 * peak0)`.
-
-The local background-estimation range can be set explicitly:
-
-```txt
-option = local, # none, global
-range = 180,200
-```
-
-If `range` is commented out, the macro uses the fit range plus this padding on each side:
-
-```txt
-max(5 * FWHM, 0.5 * fitWidth, iteration * binWidth)
-```
-
-The local range is clamped to the histogram x axis. If a user-supplied local range does not cover the fit range, it is expanded to cover the fit range.
-
-When TSpectrum background removal is enabled, the fit is performed on a temporary background-subtracted histogram. The canvas still shows the original histogram. The red total fit and black fit-background curve are drawn back on the original histogram scale, and the removed TSpectrum background is shown as a red dashed line.
+`option` controls TSpectrum background removal and accepts `none`, `global`, or `local`.
 
 ## PhotoPeakFit_Config.txt
 
-`Config/PhotoPeakFit_Config.txt` is an example config file. Blank lines and lines starting with `#` are ignored.
-
-Minimal config:
+`Config/PhotoPeakFit_Config.txt` is the single-peak example config. It supports:
 
 ```txt
 mode = auto
-# option defaults to none when omitted.
+mode = highstat
+mode = lowstat
+
+rootFitOption = RQSN
+option = none # global, local
+iteration = 20
+range = 180,200
+
+init <par> = <value>
+limit <par> = <low> <high>
+fix <par> = <value>
 ```
 
-Example with user constraints:
+Example:
 
 ```txt
 mode = highstat
@@ -296,49 +267,172 @@ fix R = 10
 fix BETA = 1.5
 ```
 
+Parameter names must be `A`, `B`, `C`, `R`, `BETA`, `STEP`, `P`, `W`, and `H`.
+
+`init P` is required only for the config-only interface:
+
+```cpp
+photopeakfit(h, low, high, "Config/PhotoPeakFit_Config.txt");
+```
+
+When `peak0` is supplied in the function call, `peak0` wins and `init P` does not override it.
+
+`mode` decides the active model. `init`, `limit`, and `fix` only apply to parameters active in that model. In `auto`, each candidate uses the applicable config lines; inactive config lines for the final model are reported as warnings.
+
+# multipeakfit()
+
+`multipeakfit()` fits multiple photopeaks in one histogram range. It shares `A/B/C/R/BETA/STEP` across all peaks, while each peak has its own `P[i]`, `W[i]`, and `H[i]` unless relative constraints or fixed parameters make `P[i]` or `W[i]` derived.
+
+## Interface And Use
+
+Quick use:
+
+```cpp
+.L PhotoPeakFit.C
+multipeakfit(h, 185, 205, {191.75, 194.20, 198.10});
+multipeakfit(h, 185, 205, {191.75, 194.20, 198.10},
+             "Config/MultiPeakFit_Config.txt");
+multipeakfit(h, 185, 205, "Config/MultiPeakFit_Config.txt");
+```
+
+Public interfaces:
+
+```cpp
+int multipeakfit(TH1 *hist, double fitLow, double fitHigh,
+                 std::initializer_list<double> peaks);
+
+int multipeakfit(TH1 *hist, double fitLow, double fitHigh,
+                 std::initializer_list<double> peaks,
+                 const char *configFile);
+
+int multipeakfit(TH1 *hist, double fitLow, double fitHigh,
+                 const char *configFile);
+```
+
+A C++ `PhotoPeakFitConfig` overload and a C-style peak-array overload also exist for advanced macro control.
+
+Inputs:
+
+- `hist`: histogram pointer.
+- `fitLow`, `fitHigh`: common fit limits as x-values.
+- `peaks`: initial peak positions as x-values, in user-given order.
+- `configFile`: optional multi-peak text config file.
+
+Peak order is preserved. It is recommended to enter peaks from low x to high x. If the order is not increasing, the macro prints a warning but does not sort, because order defines indexed config entries such as `P[0]`, `W[0]`, and `H[0]`.
+
+Position rule:
+
+- If `peaks` are supplied in the function call, they define the initial/reference peak positions.
+- If `peaks` are omitted, `configFile` must define contiguous `init P[0]`, `init P[1]`, ... values.
+- `limit P[i]` and `fix P[i]` remain valid constraints in both cases.
+
+## Parameters, Initial Values, And Limits
+
+Global shared parameters:
+
+| Parameter | Meaning | Default initial value | Default limit |
+| --- | --- | --- | --- |
+| `A` | Shared constant background term. | `(y(fitLow) + y(fitHigh)) / 2` | none |
+| `B` | Shared linear background slope. | `(y(fitHigh) - y(fitLow)) / fitWidth` | none |
+| `C` | Shared quadratic background coefficient. | `0` | none |
+| `R` | Shared skew-tail fraction in percent. | `10` | `[0, 100]` |
+| `BETA` | Shared skew-tail decay constant. | `W0[0] / 2` | `[1e-6, 10 * fitWidth]` |
+| `STEP` | Shared step relative height. | `0.25` | `[0, 100]` |
+
+Per-peak and relative parameters:
+
+| Parameter | Meaning | Default initial value | Default limit |
+| --- | --- | --- | --- |
+| `P[i]` | Peak `i` centroid or reference centroid. | input peak `i`, or `init P[i]` in config-only calls | `[fitLow, fitHigh]` when fitted |
+| `W[i]` | Peak `i` FWHM or reference FWHM. | `init W[i]`, else `sqrt(9 + 0.004 * P0_i)` | `[1e-6, fitWidth]` when fitted |
+| `H[i]` | Peak `i` height. | peak bin content minus estimated linear background | `[0, 10 * yMax]` |
+| `WSCALE` | Common FWHM scale when `relativeFwhm = true`. | `1.0` | `[1e-6, 10]`, or `limit WSCALE` |
+
+When `relativePosition = false`, each non-fixed `P[i]` is fitted independently.
+
+When `relativePosition = true`, positions are derived from one master position:
+
+```txt
+P_i = PMASTER + (P0_i - P0_0)
+```
+
+If any `fix P[i]` is set, the first fixed `P[i]` anchors all positions and no position parameter is fitted. This is the relative-position or position-scale behavior: peak spacings are fixed by function-input peaks, or by `init P[i]` in config-only calls.
+
+When `relativeFwhm = false`, each non-fixed `W[i]` is fitted independently.
+
+When `relativeFwhm = true`, non-fixed widths are derived from `WSCALE`:
+
+```txt
+W_i = WSCALE * W0_i
+```
+
+`fix W[i]` fixes only peak `i`; other non-fixed peaks still use `WSCALE`.
+
+## Fit Mode And Options
+
+The `mode`, candidate model parts, `rootFitOption`, and TSpectrum `option` keywords have the same meaning as in `photopeakfit()`.
+
+Multi-peak defaults:
+
+| Setting | Default |
+| --- | --- |
+| `mode` | `auto` |
+| `rootFitOption` | `RQSN` |
+| `option` | `none` |
+| `relativePosition` | `false` |
+| `relativeFwhm` | `true` |
+
+`auto` chooses the shape/background complexity under the current relative constraints. It does not automatically choose whether positions or widths should be relative; those are user-controlled assumptions.
+
+If `fix R = 0`, the skew tail is disabled and `BETA` is removed as an active fit parameter.
+
+The printed output first lists fit metadata, then groups each peak's position, height, FWHM, and area with uncertainties. Raw TF1 parameters are printed after the grouped peak values.
+
+## MultiPeakFit_Config.txt
+
+`Config/MultiPeakFit_Config.txt` is a complete 3-peak example. After `relativePosition` and `relativeFwhm`, it is organized into three sections matching the single-peak config style:
+
+- Initial values
+- Limits
+- Fixed parameters
+
+`init P[i]` values are required only for the config-only interface:
+
+```cpp
+multipeakfit(h, low, high, "Config/MultiPeakFit_Config.txt");
+```
+
+When the peak list is supplied in the function call, the function-input positions win and `init P[i]` does not override them. The config-only interface requires contiguous `init P[0]`, `init P[1]`, ... values.
+
 Supported syntax:
 
 ```txt
 mode = auto
-mode = highstat
-mode = lowstat
-
 rootFitOption = RQSN
-option = none, # global, local
+option = none # global, local
 iteration = 20
-range = 180,200
-init <par> = <value>
-limit <par> = <low> <high>
-fix <par> = <value>
+range = 185,205
+
+relativePosition = false
+relativeFwhm = true
+
+init WSCALE = 1.0
+limit WSCALE = 0.5 2.0
+fix WSCALE = 1.0
+
+init P[0] = 191.75
+limit P[0] = 190 193
+fix P[0] = 191.75
+
+init W[0] = 3.0
+limit W[0] = 0.1 20
+fix W[0] = 3.0
+
+init H[0] = 800
+limit H[0] = 0 1e9
+fix H[0] = 800
 ```
 
-If `mode`, `rootFitOption`, and `option` are commented out, the default setup is used:
+In `relativePosition = true`, `limit P[0]` applies to `PMASTER` when there is no fixed position anchor. `limit P[i>0]` only applies when `relativePosition = false`.
 
-```txt
-mode = auto
-rootFitOption = RQSN
-option = none, # global, local
-```
-
-`rootFitOption` is passed to ROOT as:
-
-```cpp
-hist->Fit(func, rootFitOption);
-```
-
-The default `RQSN` means:
-
-| Option | Meaning in this macro |
-| --- | --- |
-| `R` | Use the TF1 fit range. |
-| `Q` | Quiet mode, minimum printed ROOT fit output. |
-| `S` | Return a `TFitResultPtr` for covariance and status. |
-| `N` | Do not store or draw the fit function automatically. |
-
-Parameter names must match `PhotoPeakFit.C`: `A`, `B`, `C`, `R`, `BETA`, `STEP`, `P`, `W`, and `H`.
-
-Conflict rule:
-
-`mode` decides the active model. `init`, `limit`, and `fix` only apply to parameters active in that model. For example, if `mode = lowstat` and `fix R = 10`, `R` is inactive because the low-stat model has no skew tail. The fit remains low-stat, and the `fix R` line is ignored with a warning.
-
-In `mode = auto`, each candidate model only uses config lines for parameters active in that candidate. After the final model is selected, inactive config lines for that model are reported as warnings.
+In `relativeFwhm = true`, use `limit WSCALE` for the fitted width scale. `limit W[i]` only applies when `relativeFwhm = false`; `init W[i]` remains useful as the reference width `W0_i`.
