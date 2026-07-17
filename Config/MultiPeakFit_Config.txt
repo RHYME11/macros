@@ -56,11 +56,11 @@ mode = auto
 rootFitOption = RQSN
 
 # TSpectrum background removal.
-option = none # none, global, local
+# option = local # none, global, local
 # iteration = 20
 # range = 185,205
 
-relativePosition = true
+relativePosition = false
 relativeFwhm = true
 
 #####################################################################################
@@ -80,7 +80,7 @@ relativeFwhm = true
 
 # Peak 0 position/FWHM/height initial values.
 # init P[0] = 191.75
-# init W[0] = 3.0
+ init W[0] = 2.0
 # init H[0] = 800
 
 # Peak 1 position/FWHM/height initial values.
@@ -106,29 +106,39 @@ relativeFwhm = true
 # limit STEP = 0 100
 
 # FWHM scale limits. Used when relativeFwhm = true.
-limit WSCALE = 0.5 2.0
+ limit WSCALE = 0.61 2.0
 
 # Peak 0 limits.
-# limit P[0] = 190 193
-# limit W[0] = 0.1 20
+# limit P[0] = 176 180
+ limit W[0] = 2 4
 # limit H[0] = 0 1e9
 
 # Peak 1 limits.
-# limit P[1] = 193 196
-# limit W[1] = 0.1 20
+# limit P[1] = 332 334
+# limit W[1] = 2 4
 # limit H[1] = 0 1e9
 
 # Peak 2 limits.
-# limit P[2] = 197 200
-# limit W[2] = 0.1 20
+# limit P[2] = 334 336
+# limit W[2] = 2 4
 # limit H[2] = 0 1e9
+
+# Peak 3 limits.
+# limit P[3] = 334 336
+# limit W[3] = 2 4
+# limit H[3] = 0 1e9
+
+# Peak 4 limits.
+# limit P[4] = 334 336
+# limit W[4] = 2 4
+# limit H[4] = 0 1e9
 
 #####################################################################################
 # Fixed parameters
 #####################################################################################
 
 # Global shared fixed parameters.
-# fix R = 0
+ fix R = 0
 # fix BETA = 1.5
 # fix STEP = 0
 
@@ -141,11 +151,11 @@ limit WSCALE = 0.5 2.0
 # fix H[0] = 800
 
 # Peak 1 fixed parameters.
-# fix P[1] = 194.20
+# fix P[1] = 332.8
 # fix W[1] = 3.2
 # fix H[1] = 500
 
 # Peak 2 fixed parameters.
-# fix P[2] = 198.10
+# fix P[2] = 335
 # fix W[2] = 3.2
 # fix H[2] = 300

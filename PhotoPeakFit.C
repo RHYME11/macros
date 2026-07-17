@@ -323,26 +323,111 @@ const char *PhotoPeakBoolName(bool value)
 }
 
 // ============== PhotoPeakRemovePreviousDrawObjects ==============
-// Purpose: Remove previous fit curves and legends created by this macro.
-// Inputs: Current ROOT pad.
-// Outputs: Current pad with old fit objects removed.
-void PhotoPeakRemovePreviousDrawObjects(TVirtualPad *pad)
+// Purpose: Build the per-histogram draw-object tag.
+// Inputs: Histogram pointer.
+// Outputs: Stable tag string for this ROOT session.
+TString PhotoPeakDrawTag(TH1 *hist)
+{
+  TString tag;
+  tag.Form("_hist_%p", static_cast<void *>(hist));
+  return tag;
+}
+
+// ============== PhotoPeakDrawObjectName ==============
+// Purpose: Build a unique name for a per-histogram draw object.
+// Inputs: Object prefix, histogram pointer, and object suffix.
+// Outputs: ROOT object name.
+TString PhotoPeakDrawObjectName(const char *prefix, TH1 *hist, const char *suffix)
+{
+  TString name;
+  name.Form("%s%s_%s", prefix, PhotoPeakDrawTag(hist).Data(), suffix);
+  return name;
+}
+
+// ============== PhotoPeakIsFitDrawObject ==============
+// Purpose: Check whether an object was drawn by this macro.
+// Inputs: ROOT object name.
+// Outputs: True for this macro's fit curves or legends.
+bool PhotoPeakIsFitDrawObject(const TString &name)
+{
+  return
+    name.BeginsWith("PhotoPeak_") ||
+    name.BeginsWith("MultiPeak_") ||
+    name.BeginsWith("PhotoPeakLegend_") ||
+    name.BeginsWith("MultiPeakLegend_");
+}
+
+// ============== PhotoPeakPadContainsObject ==============
+// Purpose: Check whether a ROOT pad directly contains an object.
+// Inputs: ROOT pad and object pointer.
+// Outputs: True when the object is in the pad primitive list.
+bool PhotoPeakPadContainsObject(TVirtualPad *pad, TObject *target)
+{
+  if (!pad || !target || !pad->GetListOfPrimitives()) {
+    return false;
+  }
+
+  TIterator *iter = pad->GetListOfPrimitives()->MakeIterator();
+  TObject *obj = 0;
+  while ((obj = iter->Next())) {
+    if (obj == target) {
+      delete iter;
+      return true;
+    }
+  }
+  delete iter;
+  return false;
+}
+
+// ============== PhotoPeakEnsureHistogramDrawn ==============
+// Purpose: Ensure the target histogram exists in the current pad.
+// Inputs: Histogram pointer and fallback canvas name.
+// Outputs: Current pad with histogram available for overlay drawing.
+void PhotoPeakEnsureHistogramDrawn(TH1 *hist, const char *canvasName)
+{
+  if (!gPad) {
+    new TCanvas(canvasName, canvasName, 900, 650);
+    hist->Draw();
+    return;
+  }
+
+  gPad->cd();
+  if (!PhotoPeakPadContainsObject(gPad, hist)) {
+    hist->Draw();
+  }
+}
+
+// ============== PhotoPeakRemovePreviousDrawObjects ==============
+// Purpose: Remove previous fit curves and legends for one histogram.
+// Inputs: Current ROOT pad and target histogram.
+// Outputs: Current pad with old fit objects for the histogram removed.
+void PhotoPeakRemovePreviousDrawObjects(TVirtualPad *pad, TH1 *hist)
 {
   if (!pad || !pad->GetListOfPrimitives()) {
     return;
   }
 
+  const TString histTag = PhotoPeakDrawTag(hist);
+  bool inTargetHistBlock = false;
+  bool sawTargetHist = false;
   TList *removeList = new TList();
   TIterator *iter = pad->GetListOfPrimitives()->MakeIterator();
   TObject *obj = 0;
   while ((obj = iter->Next())) {
+    if (obj == hist) {
+      inTargetHistBlock = true;
+      sawTargetHist = true;
+      continue;
+    }
+    if (sawTargetHist && obj->InheritsFrom("TH1")) {
+      inTargetHistBlock = false;
+    }
+
     const TString name = obj->GetName();
-    const bool isFitObject =
-      name.BeginsWith("PhotoPeak_") ||
-      name.BeginsWith("MultiPeak_") ||
-      name.BeginsWith("PhotoPeakLegend_") ||
-      name.BeginsWith("MultiPeakLegend_");
-    if (isFitObject) {
+    const bool isFitObject = PhotoPeakIsFitDrawObject(name);
+    const bool isTaggedForHist = name.Contains(histTag);
+    const bool isLegacyFitObject = isFitObject && !name.Contains("_hist_");
+    if (isTaggedForHist || (isLegacyFitObject && inTargetHistBlock)) {
       removeList->Add(obj);
     }
   }
@@ -2088,29 +2173,26 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
                            const PhotoPeakMultiParMap &map)
 {
   const int npars = static_cast<int>(map.parNames.size());
-  if (!gPad) {
-    new TCanvas("MultiPeak_canvas", "MultiPeak_canvas", 900, 650);
-    hist->Draw();
-  } else {
-    gPad->cd();
-    if (!hist->TestBit(TH1::kIsZoomed)) {
-      hist->Draw();
-    }
-  }
-  PhotoPeakRemovePreviousDrawObjects(gPad);
+  PhotoPeakEnsureHistogramDrawn(hist, "MultiPeak_canvas");
+  PhotoPeakRemovePreviousDrawObjects(gPad, hist);
 
   TF1 *totalDraw = total;
   if (bgResult.mode != kPhotoPeakTspectrumBgNone) {
-    totalDraw = new TF1("MultiPeak_total_fit_display",
+    const TString totalName =
+      PhotoPeakDrawObjectName("MultiPeak_", hist, "total_fit_display");
+    totalDraw = new TF1(totalName.Data(),
                         PhotoPeakMultiDisplayEval, fitLow, fitHigh, npars);
     PhotoPeakCopyMultiParameters(total, totalDraw, npars);
   }
+  totalDraw->SetName(PhotoPeakDrawObjectName("MultiPeak_", hist, "total_fit").Data());
   totalDraw->SetLineColor(kRed);
   totalDraw->SetLineStyle(1);
   totalDraw->SetLineWidth(4);
   totalDraw->SetNpx(2000);
 
-  TF1 *bg = new TF1("MultiPeak_background_fit",
+  const TString bgName =
+    PhotoPeakDrawObjectName("MultiPeak_", hist, "background_fit");
+  TF1 *bg = new TF1(bgName.Data(),
                     bgResult.mode == kPhotoPeakTspectrumBgNone ?
                     PhotoPeakMultiBgEval : PhotoPeakMultiBgDisplayEval,
                     fitLow, fitHigh, npars);
@@ -2122,7 +2204,9 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
 
   TF1 *tspectrumBg = 0;
   if (bgResult.mode != kPhotoPeakTspectrumBgNone) {
-    tspectrumBg = new TF1("MultiPeak_tspectrum_background_draw",
+    const TString tspectrumName =
+      PhotoPeakDrawObjectName("MultiPeak_", hist, "tspectrum_background_draw");
+    tspectrumBg = new TF1(tspectrumName.Data(),
                           PhotoPeakTspectrumBgEval,
                           bgResult.rangeLow, bgResult.rangeHigh, 0);
     tspectrumBg->SetLineColor(kRed);
@@ -2137,7 +2221,7 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
     kPink + 7, kTeal + 3
   };
   TLegend *legend = new TLegend(0.12, 0.70, 0.42, 0.90);
-  legend->SetName("MultiPeakLegend_fit");
+  legend->SetName(PhotoPeakDrawObjectName("MultiPeakLegend_", hist, "fit").Data());
   legend->SetBorderSize(0);
   legend->SetFillStyle(0);
   legend->SetTextSize(0.035);
@@ -2149,8 +2233,9 @@ void PhotoPeakDrawMultiFit(TH1 *hist, double fitLow, double fitHigh,
   }
 
   for (int ipeak = 0; ipeak < map.nPeaks; ++ipeak) {
-    TString name;
-    name.Form("MultiPeak_peak_%d", ipeak);
+    TString suffix;
+    suffix.Form("peak_%d", ipeak);
+    const TString name = PhotoPeakDrawObjectName("MultiPeak_", hist, suffix.Data());
     TF1 *peak = new TF1(name.Data(), PhotoPeakMultiPeakEval,
                         fitLow, fitHigh, npars + 1);
     PhotoPeakCopyMultiParameters(total, peak, npars);
@@ -2560,16 +2645,21 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
 
   TF1 *totalDraw = total;
   if (bgResult.mode != kPhotoPeakTspectrumBgNone) {
-    totalDraw = new TF1("PhotoPeak_total_fit_display",
+    const TString totalName =
+      PhotoPeakDrawObjectName("PhotoPeak_", hist, "total_fit_display");
+    totalDraw = new TF1(totalName.Data(),
                         PhotoPeakDisplayEval, fitLow, fitHigh, kNPars);
     totalDraw->SetParameters(par);
   }
+  totalDraw->SetName(PhotoPeakDrawObjectName("PhotoPeak_", hist, "total_fit").Data());
   totalDraw->SetLineColor(kRed);
   totalDraw->SetLineStyle(1);
   totalDraw->SetLineWidth(3);
   totalDraw->SetNpx(2000);
 
-  TF1 *bg = new TF1("PhotoPeak_background_fit",
+  const TString bgName =
+    PhotoPeakDrawObjectName("PhotoPeak_", hist, "background_fit");
+  TF1 *bg = new TF1(bgName.Data(),
                     bgResult.mode == kPhotoPeakTspectrumBgNone ?
                     PhotoPeakBgEval : PhotoPeakBgDisplayEval,
                     fitLow, fitHigh, kNPars);
@@ -2581,7 +2671,9 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
 
   TF1 *tspectrumBg = 0;
   if (bgResult.mode != kPhotoPeakTspectrumBgNone) {
-    tspectrumBg = new TF1("PhotoPeak_tspectrum_background_draw",
+    const TString tspectrumName =
+      PhotoPeakDrawObjectName("PhotoPeak_", hist, "tspectrum_background_draw");
+    tspectrumBg = new TF1(tspectrumName.Data(),
                           PhotoPeakTspectrumBgEval,
                           bgResult.rangeLow, bgResult.rangeHigh, 0);
     tspectrumBg->SetLineColor(kRed);
@@ -2590,16 +2682,8 @@ int PhotoPeakFitRun(TH1 *hist, double fitLow, double fitHigh, double peak0,
     tspectrumBg->SetNpx(2000);
   }
 
-  if (!gPad) {
-    new TCanvas("PhotoPeak_canvas", "PhotoPeak_canvas", 900, 650);
-    hist->Draw();
-  } else {
-    gPad->cd();
-    if (!hist->TestBit(TH1::kIsZoomed)) {
-      hist->Draw();
-    }
-  }
-  PhotoPeakRemovePreviousDrawObjects(gPad);
+  PhotoPeakEnsureHistogramDrawn(hist, "PhotoPeak_canvas");
+  PhotoPeakRemovePreviousDrawObjects(gPad, hist);
   totalDraw->Draw("same");
   bg->Draw("same");
   if (tspectrumBg) {
